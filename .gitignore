@@ -1,0 +1,54 @@
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+.yarn/install-state.gz
+
+# Build outputs
+dist/
+build/
+*.tsbuildinfo
+
+# Environment
+.env
+.env.local
+.env.*.local
+!.env.example
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Test coverage
+coverage/
+.nyc_output/
+
+# IDE / Editor
+.idea/
+.vscode/
+!.vscode/extensions.json
+!.vscode/settings.json
+*.swp
+*.swo
+.DS_Store
+
+# Prisma
+prisma/migrations/dev.db*
+prisma/migrations/*.sqlite
+
+# Docker
+.docker/
+docker-compose.override.yml
+
+# OS
+Thumbs.db
+
+# Secrets
+*.pem
+*.key
+secrets/
+.dev-keys/

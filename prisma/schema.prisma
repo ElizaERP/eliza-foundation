@@ -1,0 +1,250 @@
+// =====================================================================
+// ELIZA Foundation Platform — Prisma Schema
+// =====================================================================
+// Schema base del Modular Monolith. Cada bounded context (Tenant, IAM,
+// Audit) añadirá sus modelos durante los Sprints 1, 2 y 3.
+//
+// Convenciones obligatorias para TODO modelo de ELIZA:
+//   1. PK = String @id @default(uuid()) con tipo UUID v7 (ulid en runtime)
+//   2. Todo modelo de negocio incluye tenantId String NOT NULL (excepto
+//      el propio modelo Tenant, que ES el tenant)
+//   3. Auditoría obligatoria: createdAt, createdBy, updatedAt, updatedBy
+//   4. Soft delete opcional: deletedAt, deletedBy
+//   5. Optimistic concurrency: version Int NOT NULL @default(1)
+//   6. snake_case en BD vía @map; PascalCase en TypeScript
+//   7. RLS habilitado en todas las tablas con tenantId (ver migration init)
+// =====================================================================
+
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["multiSchema", "postgresqlExtensions"]
+}
+
+datasource db {
+  provider   = "postgresql"
+  url        = env("DATABASE_URL")
+  schemas    = ["tenant", "iam", "audit", "platform"]
+  extensions = [pgcrypto, uuid_ossp(map: "uuid-ossp")]
+}
+
+// =====================================================================
+// TENANT CONTEXT — Sprint 1 (esqueleto mínimo para Sprint 0)
+// =====================================================================
+
+enum TenantStatus {
+  PendingActivation
+  Active
+  Suspended
+  Deleted
+
+  @@schema("tenant")
+}
+
+enum TenantPlan {
+  Basic
+  Professional
+  Enterprise
+
+  @@schema("tenant")
+}
+
+model Tenant {
+  id        String       @id @db.Uuid
+  code      String       @unique @db.VarChar(50)
+  name      String       @db.VarChar(200)
+  status    TenantStatus @default(PendingActivation)
+  plan      TenantPlan   @default(Basic)
+
+  // Auditoría
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz()
+  createdBy String    @map("created_by") @db.Uuid
+  updatedAt DateTime  @updatedAt @map("updated_at") @db.Timestamptz()
+  updatedBy String    @map("updated_by") @db.Uuid
+  deletedAt DateTime? @map("deleted_at") @db.Timestamptz()
+  deletedBy String?   @map("deleted_by") @db.Uuid
+  version   Int       @default(1)
+
+  @@index([status])
+  @@index([code])
+  @@map("tenants")
+  @@schema("tenant")
+}
+
+// =====================================================================
+// IAM CONTEXT — Sprint 2 (esqueleto mínimo)
+// =====================================================================
+
+enum UserStatus {
+  Pending
+  Active
+  Suspended
+  Deleted
+
+  @@schema("iam")
+}
+
+model User {
+  id             String     @id @db.Uuid
+  // El usuario tiene un keycloak subject ID que es la identidad federada
+  keycloakSubject String    @unique @map("keycloak_subject") @db.Uuid
+  email          String     @unique @db.VarChar(320)
+  fullName       String     @map("full_name") @db.VarChar(200)
+  status         UserStatus @default(Pending)
+
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz()
+  createdBy String    @map("created_by") @db.Uuid
+  updatedAt DateTime  @updatedAt @map("updated_at") @db.Timestamptz()
+  updatedBy String    @map("updated_by") @db.Uuid
+  deletedAt DateTime? @map("deleted_at") @db.Timestamptz()
+  deletedBy String?   @map("deleted_by") @db.Uuid
+  version   Int       @default(1)
+
+  memberships UserTenantMembership[]
+
+  @@map("users")
+  @@schema("iam")
+}
+
+model UserTenantMembership {
+  id       String  @id @db.Uuid
+  userId   String  @map("user_id") @db.Uuid
+  tenantId String  @map("tenant_id") @db.Uuid
+  isActive Boolean @default(true) @map("is_active")
+  // Roles asignados a esta membership (espejo de los client roles de Keycloak)
+  rolesJson Json   @default("[]") @map("roles_json") @db.JsonB
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz()
+  createdBy String   @map("created_by") @db.Uuid
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz()
+  updatedBy String   @map("updated_by") @db.Uuid
+  version   Int      @default(1)
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@unique([userId, tenantId])
+  @@index([tenantId])
+  @@map("user_tenant_memberships")
+  @@schema("iam")
+}
+
+// =====================================================================
+// AUDIT CONTEXT — Sprint 3 (esqueleto mínimo, append-only)
+// =====================================================================
+
+model AuditLog {
+  // UUID v7 (ordenable temporalmente) — generado por aplicación con ulid()
+  id         String   @id @db.Uuid
+  tenantId   String   @map("tenant_id") @db.Uuid
+  // Posición dentro del hash chain del tenant. Monotónica creciente.
+  // Asegurado por advisory lock + SELECT MAX + INSERT en transacción.
+  chainIndex BigInt   @map("chain_index") @db.BigInt
+  occurredAt DateTime @default(now()) @map("occurred_at") @db.Timestamptz()
+
+  // Quién
+  userId    String? @map("user_id") @db.Uuid
+  ipAddress String? @map("ip_address") @db.Inet
+  userAgent String? @map("user_agent") @db.VarChar(500)
+
+  // Qué
+  action     String @db.VarChar(100)
+  entityType String @map("entity_type") @db.VarChar(100)
+  entityId   String? @map("entity_id") @db.Uuid
+
+  // Cambios (JSONB para flexibilidad sin perder queryability)
+  oldValues Json? @map("old_values") @db.JsonB
+  newValues Json? @map("new_values") @db.JsonB
+
+  // Correlación
+  correlationId String? @map("correlation_id") @db.Uuid
+  causationId   String? @map("causation_id") @db.Uuid
+
+  // Cadena de hash para inmutabilidad
+  previousHash String? @map("previous_hash") @db.Char(64)
+  hash         String  @map("hash") @db.Char(64)
+
+  @@unique([tenantId, chainIndex], map: "uniq_audit_chain")
+  @@index([tenantId, occurredAt(sort: Desc)])
+  @@index([tenantId, entityType, entityId])
+  @@index([tenantId, userId, occurredAt(sort: Desc)])
+  @@index([tenantId, correlationId])
+  @@map("audit_logs")
+  @@schema("audit")
+}
+
+// =====================================================================
+// PLATFORM — Outbox Pattern (compartido por todos los BCs)
+// =====================================================================
+
+enum OutboxStatus {
+  Pending
+  Processing
+  Published
+  Failed
+  DeadLetter
+
+  @@schema("platform")
+}
+
+model OutboxEvent {
+  id            String       @id @db.Uuid
+  tenantId      String       @map("tenant_id") @db.Uuid
+  aggregateType String       @map("aggregate_type") @db.VarChar(100)
+  aggregateId   String       @map("aggregate_id") @db.Uuid
+  eventType     String       @map("event_type") @db.VarChar(150)
+  eventVersion  Int          @default(1) @map("event_version")
+  payload       Json         @db.JsonB
+  metadata      Json         @db.JsonB
+  status        OutboxStatus @default(Pending)
+  occurredAt    DateTime     @default(now()) @map("occurred_at") @db.Timestamptz()
+
+  // Scheduling for retry-after-backoff
+  nextRetryAt   DateTime? @map("next_retry_at") @db.Timestamptz()
+
+  // Processing lease — para detectar eventos colgados por dispatcher caído
+  processingStartedAt DateTime? @map("processing_started_at") @db.Timestamptz()
+  processingNode      String?   @map("processing_node") @db.VarChar(100)
+
+  // Resolución
+  publishedAt   DateTime? @map("published_at") @db.Timestamptz()
+  retryCount    Int       @default(0) @map("retry_count")
+  lastError     String?   @map("last_error") @db.Text
+
+  @@index([status, nextRetryAt])
+  @@index([status, occurredAt])
+  @@index([tenantId, aggregateType, aggregateId])
+  @@map("outbox_events")
+  @@schema("platform")
+}
+
+// =====================================================================
+// Read Models (Sprint 4)
+// =====================================================================
+
+model TenantSummary {
+  tenantId         String   @id @map("tenant_id") @db.Uuid
+  code             String   @db.VarChar(50)
+  name             String   @db.VarChar(200)
+  status           String   @db.VarChar(50)
+  plan             String   @db.VarChar(50)
+  userCount        Int      @default(0) @map("user_count")
+  activeUserCount  Int      @default(0) @map("active_user_count")
+  lastEventAt      DateTime @default(now()) @map("last_event_at") @db.Timestamptz()
+  lastEventType    String   @default("") @map("last_event_type") @db.VarChar(150)
+  updatedAt        DateTime @updatedAt @map("updated_at") @db.Timestamptz()
+
+  @@index([status])
+  @@map("tenant_summary")
+  @@schema("platform")
+}
+
+model ProjectionCheckpoint {
+  projectionName       String    @id @map("projection_name") @db.VarChar(100)
+  lastProcessedEventId String?   @map("last_processed_event_id") @db.Uuid
+  lastProcessedAt      DateTime? @map("last_processed_at") @db.Timestamptz()
+  eventsProcessed      BigInt    @default(0) @map("events_processed")
+  lastErrorAt          DateTime? @map("last_error_at") @db.Timestamptz()
+  lastError            String?   @map("last_error") @db.Text
+
+  @@map("projection_checkpoints")
+  @@schema("platform")
+}

@@ -1,0 +1,108 @@
+{
+  "realm": "eliza",
+  "enabled": true,
+  "displayName": "ELIZA Platform",
+  "accessTokenLifespan": 900,
+  "ssoSessionIdleTimeout": 1800,
+  "ssoSessionMaxLifespan": 36000,
+  "registrationAllowed": false,
+  "loginWithEmailAllowed": true,
+  "duplicateEmailsAllowed": false,
+  "resetPasswordAllowed": true,
+  "editUsernameAllowed": false,
+  "requiredCredentials": ["password"],
+  "passwordPolicy": "length(10) and digits(1) and lowerCase(1) and upperCase(1) and specialChars(1)",
+  "roles": {
+    "client": {
+      "eliza-api": [
+        { "name": "Platform.Admin", "description": "Operador de la plataforma SaaS" },
+        { "name": "Platform.Support", "description": "Soporte de plataforma" },
+        { "name": "Platform.SRE", "description": "SRE/Operaciones" },
+        { "name": "Tenant.Admin", "description": "Administrador del propio tenant" },
+        { "name": "Tenant.Viewer", "description": "Solo lectura del tenant" },
+        { "name": "Manufacturing.Manager" },
+        { "name": "Manufacturing.Supervisor" },
+        { "name": "Manufacturing.Operator" },
+        { "name": "Inventory.Manager" },
+        { "name": "Inventory.Operator" },
+        { "name": "Sales.Manager" },
+        { "name": "Sales.Salesperson" },
+        { "name": "Quality.Manager" },
+        { "name": "Quality.Inspector" },
+        { "name": "Procurement.Manager" },
+        { "name": "Procurement.Buyer" },
+        { "name": "Logistics.Manager" },
+        { "name": "Logistics.Driver" },
+        { "name": "Billing.Manager" },
+        { "name": "Billing.Accountant" }
+      ]
+    }
+  },
+  "clients": [
+    {
+      "clientId": "eliza-api",
+      "name": "ELIZA API",
+      "enabled": true,
+      "publicClient": false,
+      "secret": "replace-me-in-production",
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": true,
+      "serviceAccountsEnabled": true,
+      "protocol": "openid-connect",
+      "redirectUris": ["http://localhost:3000/*", "http://localhost:5173/*"],
+      "webOrigins": ["http://localhost:3000", "http://localhost:5173"],
+      "attributes": {
+        "access.token.lifespan": "900"
+      },
+      "protocolMappers": [
+        {
+          "name": "tenant_id-mapper",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-attribute-mapper",
+          "config": {
+            "user.attribute": "tenant_id",
+            "claim.name": "tenant_id",
+            "jsonType.label": "String",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "true"
+          }
+        },
+        {
+          "name": "plant_id-mapper",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-attribute-mapper",
+          "config": {
+            "user.attribute": "plant_id",
+            "claim.name": "plant_id",
+            "jsonType.label": "String",
+            "id.token.claim": "true",
+            "access.token.claim": "true"
+          }
+        },
+        {
+          "name": "warehouse_id-mapper",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-attribute-mapper",
+          "config": {
+            "user.attribute": "warehouse_id",
+            "claim.name": "warehouse_id",
+            "jsonType.label": "String",
+            "id.token.claim": "true",
+            "access.token.claim": "true"
+          }
+        },
+        {
+          "name": "audience-mapper",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "config": {
+            "included.custom.audience": "eliza-api",
+            "id.token.claim": "false",
+            "access.token.claim": "true"
+          }
+        }
+      ]
+    }
+  ]
+}

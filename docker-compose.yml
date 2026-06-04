@@ -1,0 +1,83 @@
+# =====================================================================
+# ELIZA Foundation Platform — Local Development Infrastructure
+# =====================================================================
+# Brings up PostgreSQL (with RLS), Redis, and Keycloak for local dev.
+# Production deployments use Kubernetes — see Documento 10 (Cloud DevOps).
+
+services:
+  # ---------- PostgreSQL 16 ----------
+  postgres:
+    image: postgres:16-alpine
+    container_name: eliza-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: eliza
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      # Force every connection to set app.tenant_id explicitly.
+      # See prisma/migrations/init/01_roles_and_rls.sql for role setup.
+    ports:
+      - "5432:5432"
+    volumes:
+      - eliza-postgres-data:/var/lib/postgresql/data
+      - ./prisma/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d eliza"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - eliza-net
+
+  # ---------- Redis 7 ----------
+  redis:
+    image: redis:7-alpine
+    container_name: eliza-redis
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory-policy", "allkeys-lru"]
+    ports:
+      - "6379:6379"
+    volumes:
+      - eliza-redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - eliza-net
+
+  # ---------- Keycloak 25 ----------
+  keycloak:
+    image: quay.io/keycloak/keycloak:25.0
+    container_name: eliza-keycloak
+    restart: unless-stopped
+    environment:
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://postgres:5432/keycloak
+      KC_DB_USERNAME: postgres
+      KC_DB_PASSWORD: postgres
+      KEYCLOAK_ADMIN: admin
+      KEYCLOAK_ADMIN_PASSWORD: admin
+      KC_HEALTH_ENABLED: "true"
+      KC_METRICS_ENABLED: "true"
+      KC_HOSTNAME_STRICT: "false"
+      KC_HTTP_ENABLED: "true"
+    command: ["start-dev", "--import-realm"]
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./keycloak/realm:/opt/keycloak/data/import:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - eliza-net
+
+volumes:
+  eliza-postgres-data:
+  eliza-redis-data:
+
+networks:
+  eliza-net:
+    driver: bridge
