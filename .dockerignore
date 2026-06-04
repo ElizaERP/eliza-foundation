@@ -1,0 +1,74 @@
+# Excluir TODO por defecto y traer solo lo necesario
+# (sintaxis Docker no soporta esto, así que listamos explícitamente)
+
+# Source control
+.git
+.gitignore
+.gitattributes
+
+# IDE
+.idea
+.vscode
+*.swp
+*.swo
+
+# Build outputs
+dist
+build
+coverage
+.nyc_output
+*.tsbuildinfo
+
+# Node
+node_modules
+
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+pnpm-debug.log*
+
+# Environment files — NUNCA en la imagen
+.env
+.env.*
+!.env.example
+
+# Test keys / dev keys
+.dev-keys
+
+# Docker
+.docker
+docker-compose.override.yml
+Dockerfile*
+.dockerignore
+
+# CI/CD
+.github
+.gitlab-ci.yml
+
+# Documentation (no necesaria en runtime)
+*.md
+docs
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.editorconfig
+
+# Tests (no se incluyen en la imagen de prod)
+**/*.spec.ts
+**/*.test.ts
+test
+__tests__
+
+# Terraform
+terraform
+.terraform
+*.tfstate*
+
+# Kubernetes manifests (se aplican aparte, no van en la imagen)
+k8s
+keycloak

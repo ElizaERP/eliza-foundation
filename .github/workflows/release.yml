@@ -1,0 +1,164 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*.*.*']
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Entorno destino'
+        required: true
+        default: 'staging'
+        type: choice
+        options: [staging, production]
+      tag:
+        description: 'Tag de la imagen (ej. v0.1.0 o latest)'
+        required: true
+        default: 'latest'
+
+# Secrets que el repo debe tener configurados:
+#   OCI_REGION                ej. iad
+#   OCI_TENANCY_NAMESPACE     namespace de tu tenancy en OCIR
+#   OCI_USER                  user@correo o user-OCID
+#   OCI_AUTH_TOKEN            auth token generado en User Settings
+#   OCI_CLI_USER              OCID del usuario para `oci` CLI
+#   OCI_CLI_TENANCY           OCID del tenancy
+#   OCI_CLI_FINGERPRINT       fingerprint de la API key
+#   OCI_CLI_KEY_CONTENT       contenido del .pem (multilínea)
+#   OKE_CLUSTER_ID            OCID del cluster donde desplegar
+#   OCI_CLI_REGION            región (ej. us-ashburn-1)
+
+env:
+  IMAGE_NAME: eliza-foundation
+
+jobs:
+  build-and-push:
+    name: Build & Push to OCIR
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    outputs:
+      image_tag: ${{ steps.meta.outputs.tag }}
+      full_image: ${{ steps.meta.outputs.full_image }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve tag and image
+        id: meta
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            TAG="${{ inputs.tag }}"
+          else
+            TAG="${GITHUB_REF#refs/tags/}"
+          fi
+          FULL="${{ secrets.OCI_REGION }}.ocir.io/${{ secrets.OCI_TENANCY_NAMESPACE }}/${{ env.IMAGE_NAME }}:${TAG}"
+          echo "tag=${TAG}"          >> $GITHUB_OUTPUT
+          echo "full_image=${FULL}"  >> $GITHUB_OUTPUT
+          echo "Resolved image: ${FULL}"
+
+      - name: Login to OCIR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ secrets.OCI_REGION }}.ocir.io
+          username: ${{ secrets.OCI_TENANCY_NAMESPACE }}/${{ secrets.OCI_USER }}
+          password: ${{ secrets.OCI_AUTH_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build & push
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          platforms: linux/amd64
+          tags: |
+            ${{ steps.meta.outputs.full_image }}
+            ${{ secrets.OCI_REGION }}.ocir.io/${{ secrets.OCI_TENANCY_NAMESPACE }}/${{ env.IMAGE_NAME }}:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.created=${{ github.event.head_commit.timestamp }}
+
+  deploy:
+    name: Deploy to OKE (${{ inputs.environment || 'staging' }})
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: ${{ inputs.environment || 'staging' }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install OCI CLI
+        run: |
+          curl -L https://raw.githubusercontent.com/oracle/oci-cli/master/scripts/install/install.sh | \
+            bash -s -- --accept-all-defaults
+          echo "$HOME/bin" >> $GITHUB_PATH
+
+      - name: Configure OCI CLI
+        run: |
+          mkdir -p ~/.oci
+          cat > ~/.oci/config <<EOF
+          [DEFAULT]
+          user=${{ secrets.OCI_CLI_USER }}
+          fingerprint=${{ secrets.OCI_CLI_FINGERPRINT }}
+          tenancy=${{ secrets.OCI_CLI_TENANCY }}
+          region=${{ secrets.OCI_CLI_REGION }}
+          key_file=~/.oci/oci_api_key.pem
+          EOF
+          echo "${{ secrets.OCI_CLI_KEY_CONTENT }}" > ~/.oci/oci_api_key.pem
+          chmod 600 ~/.oci/oci_api_key.pem ~/.oci/config
+
+      - name: Get kubeconfig for OKE cluster
+        run: |
+          mkdir -p ~/.kube
+          oci ce cluster create-kubeconfig \
+            --cluster-id "${{ secrets.OKE_CLUSTER_ID }}" \
+            --file ~/.kube/config \
+            --region "${{ secrets.OCI_CLI_REGION }}" \
+            --token-version 2.0.0
+          chmod 600 ~/.kube/config
+
+      - name: Install kubectl
+        uses: azure/setup-kubectl@v4
+        with:
+          version: 'v1.30.0'
+
+      - name: Patch manifests with new image tag
+        run: |
+          IMAGE="${{ needs.build-and-push.outputs.full_image }}"
+          echo "Deploying image: ${IMAGE}"
+          # Reemplazar el placeholder de los manifiestos
+          find k8s -type f -name "*.yaml" -exec sed -i \
+            "s|iad.ocir.io/REPLACE_TENANCY/eliza-foundation:REPLACE_VERSION|${IMAGE}|g" {} \;
+
+      - name: Apply namespace + config (si no existe)
+        run: |
+          kubectl apply -f k8s/01-namespace.yaml
+          kubectl apply -f k8s/02-configmap.yaml
+
+      - name: Run database migration job
+        run: |
+          # Borrar el Job anterior si existe (Jobs son inmutables)
+          kubectl delete job eliza-foundation-migrate -n eliza --ignore-not-found
+          kubectl apply -f k8s/04-migration-job.yaml
+          echo "Waiting for migration to complete..."
+          kubectl wait --for=condition=complete \
+            job/eliza-foundation-migrate -n eliza --timeout=10m
+
+      - name: Apply Deployments + Service + Ingress + HPA + NetPol
+        run: |
+          kubectl apply -f k8s/05-deployments.yaml
+          kubectl apply -f k8s/06-ingress-hpa-netpol.yaml
+
+      - name: Wait for rollout
+        run: |
+          kubectl rollout status deployment/eliza-foundation-writers -n eliza --timeout=10m
+          kubectl rollout status deployment/eliza-foundation-workers -n eliza --timeout=10m
+
+      - name: Print pod status
+        if: always()
+        run: kubectl get all -n eliza

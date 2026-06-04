@@ -1,0 +1,92 @@
+# =====================================================================
+# ELIZA Foundation Platform — Compose para correr la app DENTRO de Docker
+# =====================================================================
+# Uso:
+#   docker compose -f docker-compose.yml -f docker-compose.app.yml up --build
+#
+# A diferencia de `docker-compose.yml` (solo infra), este levanta también:
+#   - eliza-writers:  2 instancias del API (sin dispatcher)
+#   - eliza-worker:   1 instancia del API (solo dispatcher, sin tráfico HTTP)
+#   - eliza-nginx:    load balancer simple en 3000 → writers
+#
+# Es el escenario PRE-OCI: te permite validar el patrón writers/workers
+# antes de desplegar a Kubernetes.
+
+services:
+  eliza-writers:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      APP_PORT: 3000
+      LOG_LEVEL: info
+      DATABASE_URL: postgresql://app_user:app_password@postgres:5432/eliza?schema=public
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ""
+      KEYCLOAK_BASE_URL: http://keycloak:8080
+      KEYCLOAK_REALM: eliza
+      KEYCLOAK_CLIENT_ID: eliza-api
+      KEYCLOAK_CLIENT_SECRET: replace-me-in-production
+      KEYCLOAK_JWKS_URI: http://keycloak:8080/realms/eliza/protocol/openid-connect/certs
+      KEYCLOAK_ISSUER: http://keycloak:8080/realms/eliza
+      KEYCLOAK_AUDIENCE: eliza-api
+      KEYCLOAK_ADMIN_USERNAME: admin
+      KEYCLOAK_ADMIN_PASSWORD: admin
+      CORS_ORIGINS: http://localhost:5173,http://localhost:3001
+      # Sprint 4: este Deployment NO despacha — solo escribe en outbox
+      OUTBOX_DISPATCHER_ENABLED: "false"
+      EVENT_BUS_TYPE: redis_streams
+      EVENT_BUS_STREAM_PREFIX: "eliza:event:"
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis:    { condition: service_healthy }
+      keycloak: { condition: service_started }
+    deploy:
+      replicas: 2
+    networks: [eliza-net]
+
+  eliza-worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      APP_PORT: 3000
+      LOG_LEVEL: info
+      DATABASE_URL: postgresql://app_user:app_password@postgres:5432/eliza?schema=public
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ""
+      KEYCLOAK_BASE_URL: http://keycloak:8080
+      KEYCLOAK_REALM: eliza
+      KEYCLOAK_CLIENT_ID: eliza-api
+      KEYCLOAK_CLIENT_SECRET: replace-me-in-production
+      KEYCLOAK_JWKS_URI: http://keycloak:8080/realms/eliza/protocol/openid-connect/certs
+      KEYCLOAK_ISSUER: http://keycloak:8080/realms/eliza
+      KEYCLOAK_AUDIENCE: eliza-api
+      KEYCLOAK_ADMIN_USERNAME: admin
+      KEYCLOAK_ADMIN_PASSWORD: admin
+      # Este Deployment SÍ despacha — es el "worker"
+      OUTBOX_DISPATCHER_ENABLED: "true"
+      EVENT_BUS_TYPE: redis_streams
+      EVENT_BUS_STREAM_PREFIX: "eliza:event:"
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis:    { condition: service_healthy }
+      keycloak: { condition: service_started }
+    networks: [eliza-net]
+
+  eliza-nginx:
+    image: nginx:alpine
+    restart: unless-stopped
+    ports:
+      - "3000:80"
+    volumes:
+      - ./nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      - eliza-writers
+    networks: [eliza-net]

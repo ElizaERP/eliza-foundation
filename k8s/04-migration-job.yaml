@@ -1,0 +1,52 @@
+# =====================================================================
+# Migration Job — ejecuta `prisma migrate deploy` con el rol migration_user
+# =====================================================================
+# Se aplica ANTES de los Deployments. Usa DATABASE_MIGRATION_URL (que tiene DDL),
+# no DATABASE_URL (que es app_user, sin DDL).
+#
+# En CI/CD, este Job se aplica como step previo a actualizar los Deployments.
+
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: eliza-foundation-migrate
+  namespace: eliza
+  # ttlSecondsAfterFinished: el Job se borra automáticamente tras éxito
+  # para permitir re-aplicarlo en el siguiente deploy con el mismo nombre.
+spec:
+  ttlSecondsAfterFinished: 600
+  backoffLimit: 2
+  template:
+    spec:
+      restartPolicy: OnFailure
+      imagePullSecrets:
+        - name: ocir-secret
+      containers:
+        - name: migrate
+          # Usa la MISMA imagen que la app — Prisma migrate está disponible
+          image: iad.ocir.io/REPLACE_TENANCY/eliza-foundation:REPLACE_VERSION
+          command:
+            - sh
+            - -c
+            - |
+              echo "Running Prisma migrate deploy..."
+              cd /app && \
+              DATABASE_URL=$DATABASE_MIGRATION_URL \
+                npx prisma migrate deploy
+              echo "Migrations complete."
+          env:
+            - name: DATABASE_MIGRATION_URL
+              valueFrom:
+                secretKeyRef:
+                  name: eliza-foundation-secrets
+                  key: DATABASE_MIGRATION_URL
+          resources:
+            requests: { cpu: "100m", memory: "256Mi" }
+            limits:   { cpu: "500m", memory: "512Mi" }
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1001
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: false   # Prisma necesita escribir tmp
+            capabilities:
+              drop: ["ALL"]

@@ -1,0 +1,170 @@
+# =====================================================================
+# Deployments — patrón writers + workers (Sprint 4)
+# =====================================================================
+# writers: reciben tráfico HTTP, NO despachan eventos del outbox
+# workers: NO reciben tráfico, despachan eventos del outbox al bus
+#
+# Se escalan independientemente con sus propios HPA.
+
+# ---------- WRITERS ----------
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: eliza-foundation-writers
+  namespace: eliza
+  labels:
+    app: eliza-foundation
+    role: writer
+spec:
+  replicas: 3
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: eliza-foundation
+      role: writer
+  template:
+    metadata:
+      labels:
+        app: eliza-foundation
+        role: writer
+    spec:
+      imagePullSecrets:
+        - name: ocir-secret
+      terminationGracePeriodSeconds: 30
+      containers:
+        - name: app
+          image: iad.ocir.io/REPLACE_TENANCY/eliza-foundation:REPLACE_VERSION
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 3000
+              name: http
+          env:
+            # Override: este Deployment NO despacha
+            - name: OUTBOX_DISPATCHER_ENABLED
+              value: "false"
+          envFrom:
+            - configMapRef:
+                name: eliza-foundation-config
+            - secretRef:
+                name: eliza-foundation-secrets
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 3000
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /health/ready
+              port: 3000
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 2
+          resources:
+            requests: { cpu: "500m", memory: "512Mi" }
+            limits:   { cpu: "2000m", memory: "2Gi" }
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1001
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: false
+            capabilities:
+              drop: ["ALL"]
+      # Anti-affinity: distribuir pods entre nodos diferentes
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchLabels:
+                    app: eliza-foundation
+                    role: writer
+                topologyKey: kubernetes.io/hostname
+---
+# ---------- WORKERS ----------
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: eliza-foundation-workers
+  namespace: eliza
+  labels:
+    app: eliza-foundation
+    role: worker
+spec:
+  replicas: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: eliza-foundation
+      role: worker
+  template:
+    metadata:
+      labels:
+        app: eliza-foundation
+        role: worker
+    spec:
+      imagePullSecrets:
+        - name: ocir-secret
+      # Más tiempo de grace — el dispatcher debe terminar el batch actual
+      terminationGracePeriodSeconds: 60
+      containers:
+        - name: app
+          image: iad.ocir.io/REPLACE_TENANCY/eliza-foundation:REPLACE_VERSION
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 3000
+              name: http
+          env:
+            - name: OUTBOX_DISPATCHER_ENABLED
+              value: "true"
+          envFrom:
+            - configMapRef:
+                name: eliza-foundation-config
+            - secretRef:
+                name: eliza-foundation-secrets
+          livenessProbe:
+            httpGet: { path: /health, port: 3000 }
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          readinessProbe:
+            httpGet: { path: /health/ready, port: 3000 }
+            initialDelaySeconds: 10
+            periodSeconds: 5
+          resources:
+            requests: { cpu: "500m", memory: "512Mi" }
+            limits:   { cpu: "2000m", memory: "2Gi" }
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1001
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: false
+            capabilities:
+              drop: ["ALL"]
+---
+# ---------- Service: solo apunta a writers ----------
+apiVersion: v1
+kind: Service
+metadata:
+  name: eliza-foundation
+  namespace: eliza
+spec:
+  type: ClusterIP
+  ports:
+    - port: 80
+      targetPort: 3000
+      name: http
+  selector:
+    app: eliza-foundation
+    role: writer  # ← solo writers reciben tráfico HTTP

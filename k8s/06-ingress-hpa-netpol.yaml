@@ -1,0 +1,154 @@
+# ---------- Ingress con OCI Load Balancer ----------
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: eliza-foundation
+  namespace: eliza
+  annotations:
+    oci.oraclecloud.com/load-balancer-type: "lb"
+    service.beta.kubernetes.io/oci-load-balancer-shape: "flexible"
+    service.beta.kubernetes.io/oci-load-balancer-shape-flex-min: "10"
+    service.beta.kubernetes.io/oci-load-balancer-shape-flex-max: "100"
+    service.beta.kubernetes.io/oci-load-balancer-ssl-ports: "443"
+    service.beta.kubernetes.io/oci-load-balancer-tls-secret: "eliza-tls-cert"
+spec:
+  rules:
+    - host: api.eliza.app
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: eliza-foundation
+                port:
+                  number: 80
+---
+# ---------- HPA writers — escala con CPU ----------
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: eliza-foundation-writers
+  namespace: eliza
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: eliza-foundation-writers
+  minReplicas: 3
+  maxReplicas: 20
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+  behavior:
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies:
+        - type: Percent
+          value: 25
+          periodSeconds: 60
+    scaleUp:
+      stabilizationWindowSeconds: 0
+      policies:
+        - type: Percent
+          value: 100
+          periodSeconds: 30
+        - type: Pods
+          value: 4
+          periodSeconds: 30
+      selectPolicy: Max
+---
+# ---------- HPA workers — escala con CPU (idealmente con métrica custom) ----------
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: eliza-foundation-workers
+  namespace: eliza
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: eliza-foundation-workers
+  minReplicas: 2
+  maxReplicas: 8
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 60
+# NOTA: lo ideal sería escalar el dispatcher por la métrica custom
+# "outbox_pending_count". Eso requiere instalar prometheus-adapter
+# y exponer la métrica desde /metrics. Pendiente para iteración futura.
+---
+# ---------- NetworkPolicy — defense in depth ----------
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: eliza-foundation-network-policy
+  namespace: eliza
+spec:
+  podSelector:
+    matchLabels:
+      app: eliza-foundation
+  policyTypes: [Ingress, Egress]
+  ingress:
+    # Solo tráfico desde el Load Balancer y el Service
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-nginx
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: eliza
+      ports:
+        - protocol: TCP
+          port: 3000
+  egress:
+    # PostgreSQL (subnet privada de datos)
+    - to:
+        - ipBlock:
+            cidr: 10.0.20.0/24
+      ports:
+        - protocol: TCP
+          port: 5432
+    # Redis
+    - to:
+        - ipBlock:
+            cidr: 10.0.20.0/24
+      ports:
+        - protocol: TCP
+          port: 6379
+    # Keycloak (puede estar en el mismo cluster o en un dominio externo)
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: keycloak
+      ports:
+        - protocol: TCP
+          port: 8080
+    # DNS interno del cluster
+    - to:
+        - namespaceSelector: {}
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+    # HTTPS hacia internet (para llegar a Keycloak si está afuera, JWKS, etc.)
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+      ports:
+        - protocol: TCP
+          port: 443

@@ -1,0 +1,65 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: eliza-foundation-config
+  namespace: eliza
+data:
+  # App
+  NODE_ENV: "production"
+  APP_PORT: "3000"
+  APP_NAME: "eliza-foundation"
+  APP_GLOBAL_PREFIX: "api"
+  APP_VERSION: "v1"
+  LOG_LEVEL: "info"
+
+  # Redis (host interno del cluster o servicio managed OCI Cache)
+  REDIS_HOST: "eliza-redis.eliza-data.svc.cluster.local"
+  REDIS_PORT: "6379"
+  REDIS_DB: "0"
+  REDIS_KEY_PREFIX: "eliza:prod:"
+
+  # Keycloak
+  KEYCLOAK_BASE_URL: "https://auth.eliza.app"
+  KEYCLOAK_REALM: "eliza"
+  KEYCLOAK_CLIENT_ID: "eliza-api"
+  KEYCLOAK_JWKS_URI: "https://auth.eliza.app/realms/eliza/protocol/openid-connect/certs"
+  KEYCLOAK_ISSUER: "https://auth.eliza.app/realms/eliza"
+  KEYCLOAK_AUDIENCE: "eliza-api"
+  KEYCLOAK_ADMIN_USERNAME: "eliza-service-account"
+
+  # JWT
+  JWT_ALGORITHM: "RS256"
+  JWT_CACHE_MAX_AGE_MS: "600000"
+
+  # Tenant resolution
+  TENANT_RESOLUTION_STRATEGY: "jwt"
+  TENANT_HEADER_NAME: "X-Tenant-Id"
+  TENANT_REQUIRE_ACTIVE: "true"
+
+  # Security
+  HELMET_ENABLED: "true"
+  CORS_ORIGINS: "https://app.eliza.app,https://admin.eliza.app"
+  THROTTLE_TTL_SECONDS: "60"
+  THROTTLE_LIMIT: "1000"
+
+  # Observability
+  OTEL_EXPORTER_OTLP_ENDPOINT: "http://otel-collector.observability.svc.cluster.local:4318"
+  OTEL_SERVICE_NAME: "eliza-foundation"
+  METRICS_ENABLED: "true"
+  TRACING_ENABLED: "true"
+
+  # Outbox dispatcher (Sprint 4)
+  OUTBOX_BATCH_SIZE: "100"
+  OUTBOX_POLL_INTERVAL_MS: "500"
+  OUTBOX_MAX_RETRIES: "5"
+  OUTBOX_RETRY_BACKOFF_BASE_MS: "1000"
+  OUTBOX_STUCK_LEASE_MS: "60000"
+  OUTBOX_RECLAIM_INTERVAL_MS: "30000"
+
+  # Event Bus (Sprint 4)
+  EVENT_BUS_TYPE: "redis_streams"
+  EVENT_BUS_STREAM_PREFIX: "eliza:prod:event:"
+  EVENT_BUS_CONSUMER_GROUP: "eliza-foundation"
+
+  # OUTBOX_DISPATCHER_ENABLED no va aquí: se setea por Deployment
+  # (false en writers, true en workers).
