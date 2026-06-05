@@ -58,8 +58,19 @@ db-studio:  ## Abre Prisma Studio (UI para la BD)
 	pnpm prisma studio
 
 .PHONY: db-seed
-db-seed:  ## Carga datos de prueba
+db-seed:  ## Carga datos de prueba (tenant + admin users)
 	pnpm db:seed
+
+.PHONY: seed-catalog
+seed-catalog:  ## Carga datos de Catalog (UoMs + categorías + productos + BOMs)
+	pnpm ts-node prisma/seed-catalog.ts
+
+.PHONY: db-rls
+db-rls:  ## Aplica policies RLS adicionales (catalog) — correr después de migrate
+	@if [ -z "$$DATABASE_URL_MIGRATION" ]; then \
+		echo "❌ Set DATABASE_URL_MIGRATION (uses migration_user with DDL rights)"; exit 1; \
+	fi
+	psql "$$DATABASE_URL_MIGRATION" -f prisma/init/02_catalog_rls.sql
 
 .PHONY: db-reset
 db-reset:  ## DROP + migrate + seed (cuidado: borra todo)

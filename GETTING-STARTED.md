@@ -88,6 +88,20 @@ make db-migrate
 
 Si es tu primera vez, Prisma te pedirá nombre para la migración inicial. Acepta o pon `init`.
 
+> 💡 **Catalog (Sprint 5)**: las tablas de catalog necesitan policies RLS adicionales. Después de la primera migración aplica:
+> ```bash
+> DATABASE_URL_MIGRATION="postgresql://migration_user:migration@localhost:5432/eliza" \
+>   make db-rls
+> ```
+> Esto activa Row Level Security sobre `catalog.categories`, `catalog.products` y `catalog.bom_components`.
+
+### Paso 4.5 — Cargar datos de prueba
+
+```bash
+make db-seed       # tenant bcm-congelados + admins
+make seed-catalog  # 14 UoMs + 8 categorías + 8 productos (arepas, flautas, MPs) + 13 BOMs
+```
+
 ### Paso 5 — Generar el JWKS local (sin Keycloak)
 
 Para no depender de Keycloak para el primer arranque, ELIZA puede validar JWTs firmados localmente:
@@ -179,6 +193,7 @@ Abre `http://localhost:3000/docs` en el navegador. Verás los 38 endpoints docum
 - **Audit** — consulta forense + verify-chain
 - **Platform · Outbox** — monitoreo del bus de eventos
 - **Platform · Read Models** — vista materializada del tenant summary
+- **Catalog · Products / Categories / Units of Measure** — catálogo de productos (Sprint 5)
 
 Para autenticarte en Swagger:
 1. Botón **Authorize** 🔓 arriba a la derecha
@@ -460,7 +475,7 @@ curl -s "http://localhost:3000/api/v1/platform/outbox/stats" \
 
 - Variables de entorno: `ENVIRONMENT.md` documenta cada una
 - Detalles de endpoints: `API-REFERENCE.md`
-- Testing por sprint: `TESTING.md`, `TESTING-SPRINT1.md` … `TESTING-SPRINT4.md`
+- Testing por sprint: `TESTING.md`, `TESTING-SPRINT1.md` … `TESTING-SPRINT4.md`, `TESTING-CATALOG.md`
 - Despliegue completo OCI: `DEPLOYMENT-OCI.md`
 
 ---
@@ -469,7 +484,8 @@ curl -s "http://localhost:3000/api/v1/platform/outbox/stats" \
 
 Una vez que tengas la Foundation corriendo:
 
-1. **Probar Keycloak real** — Cambia `KEYCLOAK_JWKS_URI` al endpoint de Keycloak (puerto 8080), apaga el `jwks-server`, y prueba el flujo de login completo desde Postman.
-2. **Personalizar el realm** — `keycloak/realm/eliza-realm.json` viene preconfigurado con 20 roles y el client `eliza-api`. Edítalo según tu organización.
-3. **Construir el primer módulo de negocio** — La Foundation está completa. El siguiente Bounded Context (ej. Catalog, Manufacturing, Sales) sigue el mismo patrón: domain → application → infrastructure → interface → module.
-4. **Documentar tu setup específico** — Anota en una wiki interna los OCIDs, regiones, equipo on-call, runbook de incidentes.
+1. **Probar el Catalog con datos reales** — Sigue `TESTING-CATALOG.md`: crea arepas con BOM, valida la máquina de estados, prueba el aislamiento multi-tenant.
+2. **Probar Keycloak real** — Cambia `KEYCLOAK_JWKS_URI` al endpoint de Keycloak (puerto 8080), apaga el `jwks-server`, y prueba el flujo de login completo desde Postman.
+3. **Personalizar el realm** — `keycloak/realm/eliza-realm.json` viene preconfigurado con 20 roles y el client `eliza-api`. Edítalo según tu organización.
+4. **Construir el siguiente módulo de negocio** — Catalog (Sprint 5) está completo. El siguiente Bounded Context candidato es **Inventory** (existencias por lote con FEFO) o **Manufacturing** (órdenes de producción que consumen el BOM definido en Catalog). Sigue el mismo patrón: domain → application → infrastructure → interface → module.
+5. **Documentar tu setup específico** — Anota en una wiki interna los OCIDs, regiones, equipo on-call, runbook de incidentes.

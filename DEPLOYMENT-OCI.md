@@ -171,10 +171,16 @@ oci psql db-system create \
 Después conectarse y crear:
 - DB `eliza`
 - Roles `app_user` y `migration_user`
-- Schemas `tenant`, `iam`, `audit`, `platform`
+- Schemas `tenant`, `iam`, `audit`, `platform`, `catalog`
 - Función `platform.current_tenant_id()`
 
 Lo mejor: ejecutar `prisma/init/01_bootstrap.sql` (adaptado, quitando `CREATE DATABASE keycloak` si Keycloak está en su propia DB).
+
+> **Sprint 5 (Catalog)** añade un schema adicional. Tras `prisma migrate deploy` aplica también las policies RLS del catalog:
+> ```bash
+> psql "$DATABASE_URL_MIGRATION" -f prisma/init/02_catalog_rls.sql
+> ```
+> Estas policies habilitan RLS sobre `catalog.categories`, `catalog.products` y `catalog.bom_components`. La tabla `catalog.unit_of_measure` es cross-tenant (sin RLS) y solo `migration_user` puede escribirla.
 
 ### 1.5 Redis gestionado
 
@@ -507,7 +513,17 @@ spec:
       containers:
         - name: migrate
           image: iad.ocir.io/<tenancy-namespace>/eliza-foundation:v0.1.0
-          command: ["pnpm", "prisma:migrate:deploy"]
+          command: ["sh", "-c"]
+          args:
+            - |
+              set -e
+              pnpm prisma migrate deploy
+              # Aplicar policies RLS adicionales del catalog (Sprint 5)
+              # Solo necesario la primera vez o cuando se modifiquen.
+              # Idempotente con ON CONFLICT por si se re-ejecuta.
+              if [ -f prisma/init/02_catalog_rls.sql ]; then
+                psql "$DATABASE_URL" -f prisma/init/02_catalog_rls.sql || echo "RLS already applied"
+              fi
           env:
             - name: DATABASE_URL
               valueFrom:

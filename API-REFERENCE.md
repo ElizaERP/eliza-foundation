@@ -407,6 +407,49 @@ curl -sS "$API/platform/read-models/tenant-summary" \
 
 ---
 
+## 6️⃣ Catalog — productos, categorías, BOMs (Sprint 5)
+
+Multi-tenant. Las UoMs son cross-tenant (catálogo platform).
+
+| Endpoint | Método | Roles | Notas |
+|---|---|---|---|
+| `/catalog/products` | POST | Tenant.Admin · Manufacturing.Manager · Inventory.Manager · Platform.Admin | Crea producto en estado `Draft` |
+| `/catalog/products` | GET | 13 roles lectura | Filtros: `status`, `type`, `categoryId`, `categoryPath`, `isControlled`, `page`, `pageSize` |
+| `/catalog/products/search?q=` | GET | 13 roles lectura | Búsqueda ILIKE en `name`/`code`/`sku`/`barcode` |
+| `/catalog/products/by-code/:code` | GET | 13 roles lectura | Resuelve por code |
+| `/catalog/products/:id` | GET | 13 roles lectura | Incluye BOM completo |
+| `/catalog/products/:id/rename` | PATCH | Writers | `expectedVersion` opcional |
+| `/catalog/products/:id/activate` | POST | Writers | `Draft → Active` |
+| `/catalog/products/:id/discontinue` | POST | Writers | Terminal. Requiere `reason` |
+| `/catalog/products/:id/bom` | PUT | Writers | **Reemplaza** BOM completo |
+| `/catalog/categories` | POST | Writers | Crea con `parentId` opcional → árbol |
+| `/catalog/categories` | GET | Readers | Devuelve árbol completo (no plano) |
+| `/catalog/categories/:id` | GET | Readers | |
+| `/catalog/categories/:id/rename` | PATCH | Writers | |
+| `/catalog/categories/:id` | DELETE | Writers | Soft delete (`isActive=false`) |
+| `/catalog/units-of-measure` | GET | Readers | Filtros `dimension`, `activeOnly` |
+
+### Tipos y estados
+
+```
+ProductType:   RawMaterial | SemiFinished | FinishedGood | Service
+ProductStatus: Draft → Active → Discontinued   (Discontinued es terminal)
+UomDimension:  Mass | Volume | Length | Count | Time | Temperature
+```
+
+### Invariantes del dominio (devuelven HTTP 422)
+
+- Service no puede tener atributos físicos (peso, vida útil, temperatura)
+- Productos `isControlled=true` requieren `expiryDays` + rango de temperatura
+- BOM no puede contener al producto mismo (`product.bom_self_reference`)
+- No duplicados en BOM (`product.bom_duplicate_component`)
+- Services y RawMaterials no pueden tener BOM
+- Products Discontinued no aceptan modificaciones
+
+Ver `TESTING-CATALOG.md` para curls completos con datos reales (arepas, flautas).
+
+---
+
 ## 🧪 Test de fin a fin (smoke test completo)
 
 ```bash

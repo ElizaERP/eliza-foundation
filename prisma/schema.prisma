@@ -23,7 +23,7 @@ generator client {
 datasource db {
   provider   = "postgresql"
   url        = env("DATABASE_URL")
-  schemas    = ["tenant", "iam", "audit", "platform"]
+  schemas    = ["tenant", "iam", "audit", "platform", "catalog"]
   extensions = [pgcrypto, uuid_ossp(map: "uuid-ossp")]
 }
 
@@ -247,4 +247,152 @@ model ProjectionCheckpoint {
 
   @@map("projection_checkpoints")
   @@schema("platform")
+}
+
+// =====================================================================
+// Catalog (Sprint 5) — productos, categorías, unidades, BOM
+// =====================================================================
+// Multi-tenant: TODAS las tablas tienen tenantId + RLS.
+// Excepto unit_of_measure_catalog que es CROSS-TENANT (Platform-managed
+// catalog of valid units).
+
+enum ProductType {
+  RawMaterial
+  SemiFinished
+  FinishedGood
+  Service
+
+  @@schema("catalog")
+}
+
+enum ProductStatus {
+  Draft
+  Active
+  Discontinued
+
+  @@schema("catalog")
+}
+
+enum UomDimension {
+  Mass
+  Volume
+  Length
+  Count
+  Time
+  Temperature
+
+  @@schema("catalog")
+}
+
+// ---------- Catálogo platform-wide de unidades ----------
+model UnitOfMeasure {
+  id          String       @id @db.Uuid
+  code        String       @unique @db.VarChar(20)
+  name        String       @db.VarChar(100)
+  symbol      String       @db.VarChar(10)
+  dimension   UomDimension
+  // Factor de conversión a la unidad base de la dimensión (ej. g, ml).
+  // 1 kg = 1000 g  → kg.toBaseFactor = 1000
+  // 1 g  = 1 g     → g.toBaseFactor  = 1
+  toBaseFactor Decimal     @default(1) @map("to_base_factor") @db.Decimal(18, 6)
+  isActive    Boolean      @default(true) @map("is_active")
+  createdAt   DateTime     @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt   DateTime     @updatedAt @map("updated_at") @db.Timestamptz()
+
+  @@index([dimension, isActive])
+  @@map("unit_of_measure")
+  @@schema("catalog")
+}
+
+// ---------- Categorías (árbol por tenant) ----------
+model Category {
+  id          String   @id @db.Uuid
+  tenantId    String   @map("tenant_id") @db.Uuid
+  code        String   @db.VarChar(50)
+  name        String   @db.VarChar(200)
+  description String?  @db.Text
+  parentId    String?  @map("parent_id") @db.Uuid
+  // Path materializado para queries jerárquicas: "/congelados/arepas/mini"
+  path        String   @default("") @map("path") @db.VarChar(500)
+  isActive    Boolean  @default(true) @map("is_active")
+  version     Int      @default(1)
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz()
+
+  parent   Category?  @relation("CategoryHierarchy", fields: [parentId], references: [id], onDelete: Restrict)
+  children Category[] @relation("CategoryHierarchy")
+  products Product[]
+
+  @@unique([tenantId, code], map: "uniq_category_code_per_tenant")
+  @@index([tenantId, parentId])
+  @@index([tenantId, path])
+  @@map("categories")
+  @@schema("catalog")
+}
+
+// ---------- Productos (aggregate root) ----------
+model Product {
+  id          String        @id @db.Uuid
+  tenantId    String        @map("tenant_id") @db.Uuid
+  code        String        @db.VarChar(50)
+  sku         String        @db.VarChar(50)
+  barcode     String?       @db.VarChar(50)
+  name        String        @db.VarChar(200)
+  description String?       @db.Text
+  type        ProductType
+  status      ProductStatus @default(Draft)
+
+  categoryId      String  @map("category_id") @db.Uuid
+  unitOfSaleId    String  @map("unit_of_sale_id") @db.Uuid
+
+  // Atributos físicos importantes en alimentos congelados
+  packSize          Int?     @map("pack_size")              // ej. 12 (12 unidades por paquete)
+  netWeightGrams    Decimal? @map("net_weight_grams") @db.Decimal(12, 3)
+  grossWeightGrams  Decimal? @map("gross_weight_grams") @db.Decimal(12, 3)
+  expiryDays        Int?     @map("expiry_days")            // vida útil tras producción
+  storageTempMinC   Decimal? @map("storage_temp_min_c") @db.Decimal(5, 2)  // ej. -18
+  storageTempMaxC   Decimal? @map("storage_temp_max_c") @db.Decimal(5, 2)  // ej. -15
+
+  // Metadata
+  imageUrl     String?  @map("image_url") @db.VarChar(500)
+  taxRate      Decimal? @map("tax_rate") @db.Decimal(5, 2)   // ej. 19.00 (IVA Colombia)
+  isControlled Boolean  @default(false) @map("is_controlled") // requiere control especial (lote, cadena fría)
+
+  version   Int      @default(1)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz()
+
+  category    Category       @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  components  BOMComponent[] @relation("ProductComponents")
+  usedInBoms  BOMComponent[] @relation("ComponentUsedIn")
+
+  @@unique([tenantId, code], map: "uniq_product_code_per_tenant")
+  @@unique([tenantId, sku], map: "uniq_product_sku_per_tenant")
+  @@index([tenantId, status, type])
+  @@index([tenantId, categoryId])
+  @@index([tenantId, barcode])
+  @@map("products")
+  @@schema("catalog")
+}
+
+// ---------- Bill of Materials ----------
+// Relación M:N entre productos: un producto "compuesto" tiene N componentes.
+model BOMComponent {
+  id           String  @id @db.Uuid
+  tenantId     String  @map("tenant_id") @db.Uuid
+  productId    String  @map("product_id") @db.Uuid       // El producto compuesto
+  componentId  String  @map("component_id") @db.Uuid     // El producto que se usa como componente
+  quantity     Decimal @db.Decimal(18, 6)                // Cantidad por unidad del producto
+  uomId        String  @map("uom_id") @db.Uuid           // En esta unidad de medida
+  position     Int     @default(0)                        // Para ordenar la lista en UI
+  notes        String? @db.Text
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz()
+
+  product   Product @relation("ProductComponents",  fields: [productId],   references: [id], onDelete: Cascade)
+  component Product @relation("ComponentUsedIn",    fields: [componentId], references: [id], onDelete: Restrict)
+
+  @@unique([tenantId, productId, componentId], map: "uniq_bom_component")
+  @@index([tenantId, componentId])
+  @@map("bom_components")
+  @@schema("catalog")
 }

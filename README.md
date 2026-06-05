@@ -23,15 +23,15 @@ make smoke      # verifica end-to-end
 | Archivo | Para qué |
 |---|---|
 | [GETTING-STARTED.md](GETTING-STARTED.md) | **Guía maestra paso a paso** desde `git clone` a "curl funciona" |
-| [API-REFERENCE.md](API-REFERENCE.md) | Catálogo de los 38 endpoints + curls listos |
+| [API-REFERENCE.md](API-REFERENCE.md) | Catálogo de los 53 endpoints + curls listos |
 | [ENVIRONMENT.md](ENVIRONMENT.md) | Manual exhaustivo de variables de entorno |
 | [KUBERNETES.md](KUBERNETES.md) | Cómo aplicar los manifiestos k8s + operación día a día |
 | [DEPLOYMENT-OCI.md](DEPLOYMENT-OCI.md) | Provisionamiento completo en Oracle Cloud |
-| [TESTING.md](TESTING.md), `TESTING-SPRINT1..4.md` | Testing detallado por sprint |
+| [TESTING.md](TESTING.md), `TESTING-SPRINT1..4.md`, [TESTING-CATALOG.md](TESTING-CATALOG.md) | Testing detallado por sprint/contexto |
 
 ## 🏗️ Arquitectura — Estado actual
 
-La **Foundation Platform** está completa: 124 archivos TS, ~11.200 líneas, 4 Bounded Contexts construidos:
+**Foundation + primer módulo de negocio** completos: ~170 archivos TS, 5 Bounded Contexts construidos:
 
 | Sprint | Bounded Context | Estado |
 |---|---|---|
@@ -40,6 +40,7 @@ La **Foundation Platform** está completa: 124 archivos TS, ~11.200 líneas, 4 B
 | 2 | IAM + Keycloak federation | ✅ |
 | 3 | Audit log con hash chain | ✅ |
 | 4 | Outbox Dispatcher + Read Models | ✅ |
+| 5 | **Catalog** (productos, categorías, BOM) | ✅ |
 
 ## 🛠️ Stack
 
@@ -62,10 +63,13 @@ La **Foundation Platform** está completa: 124 archivos TS, ~11.200 líneas, 4 B
 │       ├── tenant/             # Sprint 1
 │       ├── iam/                # Sprint 2
 │       ├── audit/              # Sprint 3
-│       └── outbox/             # Sprint 4
+│       ├── outbox/             # Sprint 4
+│       └── catalog/            # Sprint 5 — productos, categorías, BOM
 ├── prisma/
-│   ├── schema.prisma           # Multi-schema (tenant, iam, audit, platform)
-│   └── init/                   # Bootstrap SQL (roles, schemas, helpers)
+│   ├── schema.prisma           # Multi-schema (tenant, iam, audit, platform, catalog)
+│   ├── init/                   # Bootstrap SQL (roles, schemas, helpers, RLS catalog)
+│   ├── seed.ts                 # Datos base (tenant + admins)
+│   └── seed-catalog.ts         # Datos del catalog (UoMs, arepas, flautas, BOMs)
 ├── keycloak/realm/             # Realm preconfigurado con 20 roles
 ├── k8s/                        # Manifiestos Kubernetes
 ├── terraform/                  # Infraestructura como código (OCI)

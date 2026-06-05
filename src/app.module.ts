@@ -5,6 +5,7 @@ import { LoggerModule } from 'nestjs-pino';
 
 import { envValidationSchema } from './config/env.validation';
 import { AuditContextModule } from './contexts/audit/audit.module';
+import { CatalogContextModule } from './contexts/catalog/catalog.module';
 import { IamContextModule } from './contexts/iam/iam.module';
 import { OutboxContextModule } from './contexts/outbox/outbox.module';
 import { TenantContextModule } from './contexts/tenant/tenant.module';
@@ -81,6 +82,7 @@ import { TenantContextMiddleware } from './shared-kernel/infrastructure/tenant-c
     AuditContextModule,     // Sprint 3 ✅ — registra APP_INTERCEPTOR global
     OutboxContextModule,    // Sprint 4 ✅ — dispatcher worker + event bus
     TenantContextModule,    // Sprint 1 ✅
+    CatalogContextModule,   // Sprint 5 ✅ — primer módulo de negocio
   ],
 })
 export class AppModule implements NestModule {
