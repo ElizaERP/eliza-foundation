@@ -1,13 +1,13 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
-
 import { ulid } from 'ulid';
+
 import { PrismaService } from '@eliza/shared-kernel/infrastructure/prisma/prisma.service';
 import { TENANT_CONTEXT_PORT, TenantContextPort } from '@eliza/shared-kernel/application/ports';
-import { Inject } from '@nestjs/common';
 
 import {
   BOMComponent,
+  BOMComponentId,
   Barcode,
   CategoryId,
   EntityName,
@@ -24,18 +24,8 @@ import {
   TemperatureRange,
   UnitOfMeasureId,
   Weight,
-  BOMComponentId,
 } from '../../domain';
 
-/**
- * PrismaProductRepository — adapter completo.
- *
- *  - save() upsert atómico: aggregate + BOM components + outbox events
- *  - Optimistic concurrency: UPDATE WHERE version = expectedVersion;
- *    si count = 0 → 412 Precondition Failed
- *  - findByIds para validar BOM (evita N+1 queries)
- *  - search es ILIKE en name+sku+code+barcode
- */
 @Injectable()
 export class PrismaProductRepository implements ProductRepository {
   private readonly logger = new Logger(PrismaProductRepository.name);
@@ -47,9 +37,9 @@ export class PrismaProductRepository implements ProductRepository {
 
   async save(product: Product, expectedVersion?: number): Promise<void> {
     await this.prisma.withTenant(async (tx) => {
-      const isNew = product.version === 1 && (await tx.product.count({
-        where: { id: product.id.value },
-      })) === 0;
+      const isNew =
+        product.version === 1 &&
+        (await tx.product.count({ where: { id: product.id.value } })) === 0;
 
       if (isNew) {
         await tx.product.create({ data: this.toCreateData(product) });
@@ -64,7 +54,6 @@ export class PrismaProductRepository implements ProductRepository {
         }
       }
 
-      // Reemplazar componentes BOM (delete + insert es más simple que diff)
       await tx.bOMComponent.deleteMany({
         where: { tenantId: product.tenantId, productId: product.id.value },
       });
@@ -83,25 +72,24 @@ export class PrismaProductRepository implements ProductRepository {
         });
       }
 
-      // Drenar eventos al outbox
       const events = product.pullDomainEvents();
       if (events.length > 0) {
         await tx.outboxEvent.createMany({
           data: events.map((e) => ({
             id: ulid(),
-            tenantId: e.tenantId,
-            aggregateType: e.aggregateType,
-            aggregateId: e.aggregateId,
-            eventType: e.type,
-            eventVersion: e.version,
-            payload: e.payload as Prisma.InputJsonValue,
+            tenantId: e.metadata.tenantId,
+            aggregateType: e.metadata.aggregateType,
+            aggregateId: e.metadata.aggregateId,
+            eventType: e.metadata.eventType,
+            eventVersion: e.metadata.eventVersion,
+            payload: e.payload() as Prisma.InputJsonValue,
             metadata: {
-              eventId: e.eventId ?? ulid(),
-              occurredAt: e.occurredAt.toISOString(),
+              eventId: e.metadata.eventId,
+              occurredAt: e.metadata.occurredAt.toISOString(),
               correlationId: this.ctx.getCorrelationId(),
               userId: this.ctx.tryGetUserId(),
             } as Prisma.InputJsonValue,
-            occurredAt: e.occurredAt,
+            occurredAt: e.metadata.occurredAt,
           })),
         });
       }
@@ -109,46 +97,53 @@ export class PrismaProductRepository implements ProductRepository {
   }
 
   async findById(productId: string): Promise<Product | null> {
-    const row = await this.prisma.withTenant((tx) => tx.product.findUnique({
-      where: { id: productId },
-      include: { components: { orderBy: { position: 'asc' } } },
-    }));
+    const row = await this.prisma.withTenant((tx) =>
+      tx.product.findUnique({
+        where: { id: productId },
+        include: { components: { orderBy: { position: 'asc' } } },
+      }),
+    );
     return row ? this.toDomain(row) : null;
   }
 
   async findByCode(code: string): Promise<Product | null> {
     const tenantId = this.ctx.tryGetTenantId();
     if (!tenantId) throw new Error('Tenant context required');
-    const row = await this.prisma.withTenant((tx) => tx.product.findFirst({
-      where: { tenantId, code },
-      include: { components: { orderBy: { position: 'asc' } } },
-    }));
+    const row = await this.prisma.withTenant((tx) =>
+      tx.product.findFirst({
+        where: { tenantId, code },
+        include: { components: { orderBy: { position: 'asc' } } },
+      }),
+    );
     return row ? this.toDomain(row) : null;
   }
 
   async findBySku(sku: string): Promise<Product | null> {
     const tenantId = this.ctx.tryGetTenantId();
     if (!tenantId) throw new Error('Tenant context required');
-    const row = await this.prisma.withTenant((tx) => tx.product.findFirst({
-      where: { tenantId, sku },
-      include: { components: { orderBy: { position: 'asc' } } },
-    }));
+    const row = await this.prisma.withTenant((tx) =>
+      tx.product.findFirst({
+        where: { tenantId, sku },
+        include: { components: { orderBy: { position: 'asc' } } },
+      }),
+    );
     return row ? this.toDomain(row) : null;
   }
 
   async findByIds(ids: string[]): Promise<Product[]> {
     if (ids.length === 0) return [];
-    const rows = await this.prisma.withTenant((tx) => tx.product.findMany({
-      where: { id: { in: ids } },
-      include: { components: { orderBy: { position: 'asc' } } },
-    }));
+    const rows = await this.prisma.withTenant((tx) =>
+      tx.product.findMany({
+        where: { id: { in: ids } },
+        include: { components: { orderBy: { position: 'asc' } } },
+      }),
+    );
     return rows.map((r) => this.toDomain(r));
   }
 
   async query(filter: ProductQueryFilter): Promise<ProductQueryResult> {
     const page = filter.page ?? 1;
     const pageSize = Math.min(filter.pageSize ?? 25, 100);
-
     const where: Prisma.ProductWhereInput = { tenantId: filter.tenantId };
     if (filter.status?.length) where.status = { in: filter.status };
     if (filter.type?.length) where.type = { in: filter.type };
@@ -158,16 +153,18 @@ export class PrismaProductRepository implements ProductRepository {
       where.category = { path: { startsWith: filter.categoryPathPrefix } };
     }
 
-    const [rows, total] = await this.prisma.withTenant((tx) => Promise.all([
-      tx.product.findMany({
-        where,
-        include: { components: { orderBy: { position: 'asc' } } },
-        orderBy: [{ status: 'asc' }, { code: 'asc' }],
-        skip: (page - 1) * pageSize,
-        take: pageSize,
-      }),
-      tx.product.count({ where }),
-    ]));
+    const [rows, total] = await this.prisma.withTenant((tx) =>
+      Promise.all([
+        tx.product.findMany({
+          where,
+          include: { components: { orderBy: { position: 'asc' } } },
+          orderBy: [{ status: 'asc' }, { code: 'asc' }],
+          skip: (page - 1) * pageSize,
+          take: pageSize,
+        }),
+        tx.product.count({ where }),
+      ]),
+    );
 
     return {
       items: rows.map((r) => this.toDomain(r)),
@@ -179,24 +176,24 @@ export class PrismaProductRepository implements ProductRepository {
   }
 
   async search(args: { tenantId: string; q: string; limit?: number }): Promise<Product[]> {
-    const q = `%${args.q}%`;
-    const rows = await this.prisma.withTenant((tx) => tx.product.findMany({
-      where: {
-        tenantId: args.tenantId,
-        OR: [
-          { name:    { contains: args.q, mode: 'insensitive' } },
-          { code:    { contains: args.q, mode: 'insensitive' } },
-          { sku:     { contains: args.q, mode: 'insensitive' } },
-          { barcode: { contains: args.q, mode: 'insensitive' } },
-        ],
-      },
-      include: { components: { orderBy: { position: 'asc' } } },
-      take: args.limit ?? 25,
-    }));
+    const rows = await this.prisma.withTenant((tx) =>
+      tx.product.findMany({
+        where: {
+          tenantId: args.tenantId,
+          OR: [
+            { name: { contains: args.q, mode: 'insensitive' } },
+            { code: { contains: args.q, mode: 'insensitive' } },
+            { sku: { contains: args.q, mode: 'insensitive' } },
+            { barcode: { contains: args.q, mode: 'insensitive' } },
+          ],
+        },
+        include: { components: { orderBy: { position: 'asc' } } },
+        take: args.limit ?? 25,
+      }),
+    );
     return rows.map((r) => this.toDomain(r));
   }
 
-  // ---------- Mappers ----------
   private toCreateData(p: Product): Prisma.ProductUncheckedCreateInput {
     return {
       id: p.id.value,
@@ -226,15 +223,9 @@ export class PrismaProductRepository implements ProductRepository {
 
   private toUpdateData(p: Product): Prisma.ProductUncheckedUpdateInput {
     return {
-      code: p.code,
-      sku: p.sku,
-      barcode: p.barcode,
       name: p.name,
       description: p.description,
-      type: p.type,
       status: p.status,
-      categoryId: p.categoryId.value,
-      unitOfSaleId: p.unitOfSaleId.value,
       packSize: p.packSize,
       netWeightGrams: p.netWeight ? new Prisma.Decimal(p.netWeight.grams) : null,
       grossWeightGrams: p.grossWeight ? new Prisma.Decimal(p.grossWeight.grams) : null,
@@ -249,7 +240,9 @@ export class PrismaProductRepository implements ProductRepository {
     };
   }
 
-  private toDomain(row: Prisma.ProductGetPayload<{ include: { components: true } }>): Product {
+  private toDomain(
+    row: Prisma.ProductGetPayload<{ include: { components: true } }>,
+  ): Product {
     const codeR = ProductCode.create(row.code);
     const skuR = Sku.create(row.sku);
     const nameR = EntityName.create(row.name, 'productName');
@@ -257,24 +250,42 @@ export class PrismaProductRepository implements ProductRepository {
       throw new Error(`Persisted product ${row.id} has invalid data`);
     }
 
-    const barcode = row.barcode ? (Barcode.create(row.barcode).isOk ? Barcode.create(row.barcode).value : null) : null;
-    const netWeight = row.netWeightGrams ? Weight.fromGrams(Number(row.netWeightGrams)).value : null;
-    const grossWeight = row.grossWeightGrams ? Weight.fromGrams(Number(row.grossWeightGrams)).value : null;
-    const storage =
-      row.storageTempMinC !== null && row.storageTempMaxC !== null
-        ? TemperatureRange.create(Number(row.storageTempMinC), Number(row.storageTempMaxC)).value
-        : null;
+    let barcode: Barcode | null = null;
+    if (row.barcode) {
+      const barR = Barcode.create(row.barcode);
+      barcode = barR.isOk ? barR.value : null;
+    }
 
-    const components: BOMComponent[] = row.components.map((c) =>
-      BOMComponent.reconstitute({
+    let netWeight: Weight | null = null;
+    if (row.netWeightGrams) {
+      const wR = Weight.fromGrams(Number(row.netWeightGrams));
+      netWeight = wR.isOk ? wR.value : null;
+    }
+
+    let grossWeight: Weight | null = null;
+    if (row.grossWeightGrams) {
+      const wR = Weight.fromGrams(Number(row.grossWeightGrams));
+      grossWeight = wR.isOk ? wR.value : null;
+    }
+
+    let storageTemperature: TemperatureRange | null = null;
+    if (row.storageTempMinC !== null && row.storageTempMaxC !== null) {
+      const tR = TemperatureRange.create(Number(row.storageTempMinC), Number(row.storageTempMaxC));
+      storageTemperature = tR.isOk ? tR.value : null;
+    }
+
+    const components: BOMComponent[] = row.components.map((c) => {
+      const qR = Quantity.create(Number(c.quantity));
+      if (qR.isErr) throw new Error(`Invalid quantity in BOM component ${c.id}`);
+      return BOMComponent.reconstitute({
         id: BOMComponentId.fromString(c.id),
         componentProductId: ProductId.fromString(c.componentId),
-        quantity: Quantity.create(Number(c.quantity)).value,
+        quantity: qR.value,
         uomId: UnitOfMeasureId.fromString(c.uomId),
         position: c.position,
         notes: c.notes,
-      }),
-    );
+      });
+    });
 
     return Product.reconstitute({
       id: ProductId.fromString(row.id),
@@ -292,7 +303,7 @@ export class PrismaProductRepository implements ProductRepository {
       netWeight,
       grossWeight,
       expiryDays: row.expiryDays,
-      storageTemperature: storage,
+      storageTemperature,
       taxRate: row.taxRate !== null ? Number(row.taxRate) : null,
       imageUrl: row.imageUrl,
       isControlled: row.isControlled,
@@ -305,7 +316,10 @@ export class PrismaProductRepository implements ProductRepository {
 }
 
 export class ProductVersionMismatchError extends Error {
-  constructor(public readonly productId: string, public readonly expected: number) {
+  constructor(
+    public readonly productId: string,
+    public readonly expected: number,
+  ) {
     super(`Product ${productId} version mismatch (expected ${expected})`);
     this.name = 'ProductVersionMismatchError';
   }

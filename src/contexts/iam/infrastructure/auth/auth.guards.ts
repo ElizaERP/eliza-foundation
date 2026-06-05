@@ -23,6 +23,7 @@ import {
 } from '@eliza/shared-kernel/infrastructure/auth/auth.decorators';
 
 import { AuthenticatedUser } from './jwt.strategy';
+export { AuthenticatedUser };
 
 /**
  * JwtAuthGuard — extiende AuthGuard('eliza-jwt') con dos extras:

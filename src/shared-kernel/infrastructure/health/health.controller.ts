@@ -9,7 +9,7 @@ import {
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 
 import { Public } from '@eliza/shared-kernel/infrastructure/auth/auth.decorators';
-import { PrismaService } from '../../shared-kernel/infrastructure/prisma/prisma.service';
+import { PrismaService } from '../prisma/prisma.service';
 
 /**
  * Health checks expuestos en /health (sin prefijo de versión).

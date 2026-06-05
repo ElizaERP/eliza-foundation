@@ -1,51 +1,25 @@
-import { AggregateRoot, DomainError, DomainEvent, Result, err, ok } from '@eliza/shared-kernel/domain';
+import { AggregateRoot, DomainError, Result, err, ok } from '@eliza/shared-kernel/domain';
 
+import { CategoryCreated, CategoryDeactivated, CategoryRenamed } from './catalog-events';
 import { CategoryId, EntityName } from './value-objects';
 
 interface CategoryProps {
-  id: CategoryId;
-  tenantId: string;
   code: string;
   name: EntityName;
   description: string | null;
+  tenantId: string;
   parentId: CategoryId | null;
-  path: string;       // materializado: "/congelados/arepas/mini"
+  path: string;
   isActive: boolean;
-  version: number;
   createdAt: Date;
   updatedAt: Date;
 }
 
-// ---------- Domain Events ----------
-export interface CategoryCreatedPayload {
-  categoryId: string;
-  code: string;
-  name: string;
-  parentId: string | null;
-  path: string;
-}
+export class Category extends AggregateRoot<CategoryId, CategoryProps> {
+  private constructor(id: CategoryId, props: CategoryProps, version: number) {
+    super(id, props, version);
+  }
 
-export interface CategoryRenamedPayload {
-  categoryId: string;
-  oldName: string;
-  newName: string;
-}
-
-export interface CategoryDeactivatedPayload {
-  categoryId: string;
-  reason: string;
-}
-
-/**
- * Category — categorías de productos por tenant, jerarquía en forma de
- * árbol. El "path" es materializado para queries eficientes:
- *   "/congelados/arepas/mini"
- * Esto permite listar todos los descendientes con un LIKE 'path%'.
- */
-export class Category extends AggregateRoot<CategoryProps> {
-  private constructor(props: CategoryProps) { super(props); }
-
-  get id(): CategoryId { return this.props.id; }
   get tenantId(): string { return this.props.tenantId; }
   get code(): string { return this.props.code; }
   get name(): string { return this.props.name.value; }
@@ -53,7 +27,6 @@ export class Category extends AggregateRoot<CategoryProps> {
   get parentId(): CategoryId | null { return this.props.parentId; }
   get path(): string { return this.props.path; }
   get isActive(): boolean { return this.props.isActive; }
-  get version(): number { return this.props.version; }
   get createdAt(): Date { return this.props.createdAt; }
   get updatedAt(): Date { return this.props.updatedAt; }
 
@@ -73,39 +46,28 @@ export class Category extends AggregateRoot<CategoryProps> {
     }
 
     const id = CategoryId.generate();
-    const path = args.parent
-      ? `${args.parent.path}/${args.code}`
-      : `/${args.code}`;
+    const path = args.parent ? `${args.parent.path}/${args.code}` : `/${args.code}`;
 
-    const category = new Category({
-      id,
-      tenantId: args.tenantId,
+    const category = new Category(id, {
       code: args.code,
       name: nameR.value,
       description: args.description?.trim() || null,
+      tenantId: args.tenantId,
       parentId: args.parent?.id ?? null,
       path,
       isActive: true,
-      version: 1,
       createdAt: args.now,
       updatedAt: args.now,
-    });
+    }, 1);
 
-    category.addDomainEvent<CategoryCreatedPayload>({
-      type: 'catalog.CategoryCreated.v1',
-      aggregateType: 'Category',
-      aggregateId: id.value,
+    category.addDomainEvent(new CategoryCreated({
+      categoryId: id.value,
       tenantId: args.tenantId,
-      payload: {
-        categoryId: id.value,
-        code: args.code,
-        name: nameR.value.value,
-        parentId: args.parent?.id.value ?? null,
-        path,
-      },
-      occurredAt: args.now,
-      version: 1,
-    });
+      code: args.code,
+      name: nameR.value.value,
+      parentId: args.parent?.id.value ?? null,
+      path,
+    }));
 
     return ok(category);
   }
@@ -113,23 +75,18 @@ export class Category extends AggregateRoot<CategoryProps> {
   rename(newName: string, now: Date): Result<void, DomainError> {
     const nameR = EntityName.create(newName, 'categoryName');
     if (nameR.isErr) return err(nameR.error);
-    if (nameR.value.value === this.props.name.value) {
-      return ok(undefined); // no-op
-    }
+    if (nameR.value.value === this.props.name.value) return ok(undefined);
+
     const oldName = this.props.name.value;
-    this.props.name = nameR.value;
-    this.props.updatedAt = now;
+    this.props = { ...this.props, name: nameR.value, updatedAt: now };
     this.incrementVersion();
 
-    this.addDomainEvent<CategoryRenamedPayload>({
-      type: 'catalog.CategoryRenamed.v1',
-      aggregateType: 'Category',
-      aggregateId: this.props.id.value,
+    this.addDomainEvent(new CategoryRenamed({
+      categoryId: this._id.value,
       tenantId: this.props.tenantId,
-      payload: { categoryId: this.props.id.value, oldName, newName: nameR.value.value },
-      occurredAt: now,
-      version: 1,
-    });
+      oldName,
+      newName: nameR.value.value,
+    }));
     return ok(undefined);
   }
 
@@ -137,23 +94,40 @@ export class Category extends AggregateRoot<CategoryProps> {
     if (!this.props.isActive) {
       return err({ code: 'category.already_inactive', message: 'Category is already inactive' });
     }
-    this.props.isActive = false;
-    this.props.updatedAt = now;
+    this.props = { ...this.props, isActive: false, updatedAt: now };
     this.incrementVersion();
 
-    this.addDomainEvent<CategoryDeactivatedPayload>({
-      type: 'catalog.CategoryDeactivated.v1',
-      aggregateType: 'Category',
-      aggregateId: this.props.id.value,
+    this.addDomainEvent(new CategoryDeactivated({
+      categoryId: this._id.value,
       tenantId: this.props.tenantId,
-      payload: { categoryId: this.props.id.value, reason },
-      occurredAt: now,
-      version: 1,
-    });
+      reason,
+    }));
     return ok(undefined);
   }
 
-  static reconstitute(props: CategoryProps): Category {
-    return new Category(props);
+  static reconstitute(args: {
+    id: CategoryId;
+    tenantId: string;
+    code: string;
+    name: EntityName;
+    description: string | null;
+    parentId: CategoryId | null;
+    path: string;
+    isActive: boolean;
+    version: number;
+    createdAt: Date;
+    updatedAt: Date;
+  }): Category {
+    return new Category(args.id, {
+      code: args.code,
+      name: args.name,
+      description: args.description,
+      tenantId: args.tenantId,
+      parentId: args.parentId,
+      path: args.path,
+      isActive: args.isActive,
+      createdAt: args.createdAt,
+      updatedAt: args.updatedAt,
+    }, args.version);
   }
 }

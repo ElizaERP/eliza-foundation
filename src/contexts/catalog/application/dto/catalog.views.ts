@@ -1,4 +1,6 @@
-import { Category, Product, ProductStatus, ProductType, UnitOfMeasure } from '../../domain';
+import { Category } from '../../domain/category';
+import { Product, ProductStatus, ProductType } from '../../domain/product';
+import { UnitOfMeasure } from '../../domain/unit-of-measure';
 
 export interface UnitOfMeasureView {
   id: string;

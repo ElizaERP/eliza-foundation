@@ -1,6 +1,5 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
-import { ulid } from 'ulid';
 
 import { PrismaService } from '@eliza/shared-kernel/infrastructure/prisma/prisma.service';
 import { TENANT_CONTEXT_PORT, TenantContextPort } from '@eliza/shared-kernel/application/ports';
@@ -16,9 +15,6 @@ import {
   UomDimension,
 } from '../../domain';
 
-// =====================================================================
-// PrismaCategoryRepository
-// =====================================================================
 @Injectable()
 export class PrismaCategoryRepository implements CategoryRepository {
   private readonly logger = new Logger(PrismaCategoryRepository.name);
@@ -52,11 +48,8 @@ export class PrismaCategoryRepository implements CategoryRepository {
         const result = await tx.category.updateMany({
           where: { id: category.id.value, version: target },
           data: {
-            code: category.code,
             name: category.name,
             description: category.description,
-            parentId: category.parentId?.value ?? null,
-            path: category.path,
             isActive: category.isActive,
             version: category.version,
             updatedAt: category.updatedAt,
@@ -67,25 +60,25 @@ export class PrismaCategoryRepository implements CategoryRepository {
         }
       }
 
-      // Drenar eventos
       const events = category.pullDomainEvents();
       if (events.length > 0) {
+        const { ulid } = await import('ulid');
         await tx.outboxEvent.createMany({
           data: events.map((e) => ({
             id: ulid(),
-            tenantId: e.tenantId,
-            aggregateType: e.aggregateType,
-            aggregateId: e.aggregateId,
-            eventType: e.type,
-            eventVersion: e.version,
-            payload: e.payload as Prisma.InputJsonValue,
+            tenantId: e.metadata.tenantId,
+            aggregateType: e.metadata.aggregateType,
+            aggregateId: e.metadata.aggregateId,
+            eventType: e.metadata.eventType,
+            eventVersion: e.metadata.eventVersion,
+            payload: e.payload() as Prisma.InputJsonValue,
             metadata: {
-              eventId: e.eventId ?? ulid(),
-              occurredAt: e.occurredAt.toISOString(),
+              eventId: e.metadata.eventId,
+              occurredAt: e.metadata.occurredAt.toISOString(),
               correlationId: this.ctx.getCorrelationId(),
               userId: this.ctx.tryGetUserId(),
             } as Prisma.InputJsonValue,
-            occurredAt: e.occurredAt,
+            occurredAt: e.metadata.occurredAt,
           })),
         });
       }
@@ -93,7 +86,9 @@ export class PrismaCategoryRepository implements CategoryRepository {
   }
 
   async findById(categoryId: string): Promise<Category | null> {
-    const row = await this.prisma.withTenant((tx) => tx.category.findUnique({ where: { id: categoryId } }));
+    const row = await this.prisma.withTenant((tx) =>
+      tx.category.findUnique({ where: { id: categoryId } }),
+    );
     return row ? this.toDomain(row) : null;
   }
 
@@ -110,10 +105,7 @@ export class PrismaCategoryRepository implements CategoryRepository {
     const tenantId = this.ctx.tryGetTenantId();
     if (!tenantId) throw new Error('Tenant context required');
     const rows = await this.prisma.withTenant((tx) =>
-      tx.category.findMany({
-        where: { tenantId, parentId },
-        orderBy: { code: 'asc' },
-      }),
+      tx.category.findMany({ where: { tenantId, parentId }, orderBy: { code: 'asc' } }),
     );
     return rows.map((r) => this.toDomain(r));
   }
@@ -150,9 +142,6 @@ export class PrismaCategoryRepository implements CategoryRepository {
   }
 }
 
-// =====================================================================
-// PrismaUnitOfMeasureRepository — cross-tenant, sin RLS
-// =====================================================================
 @Injectable()
 export class PrismaUnitOfMeasureRepository implements UnitOfMeasureRepository {
   constructor(private readonly prisma: PrismaService) {}
@@ -184,13 +173,14 @@ export class PrismaUnitOfMeasureRepository implements UnitOfMeasureRepository {
 
   async listAll(args?: { dimension?: string; activeOnly?: boolean }): Promise<UnitOfMeasure[]> {
     const rows = await this.prisma.unsafeWithoutTenant(
-      (tx) => tx.unitOfMeasure.findMany({
-        where: {
-          ...(args?.dimension ? { dimension: args.dimension as never } : {}),
-          ...(args?.activeOnly ? { isActive: true } : {}),
-        },
-        orderBy: [{ dimension: 'asc' }, { code: 'asc' }],
-      }),
+      (tx) =>
+        tx.unitOfMeasure.findMany({
+          where: {
+            ...(args?.dimension ? { dimension: args.dimension as never } : {}),
+            ...(args?.activeOnly ? { isActive: true } : {}),
+          },
+          orderBy: [{ dimension: 'asc' }, { code: 'asc' }],
+        }),
       'UoM list catalog',
     );
     return rows.map((r) => this.toDomain(r));
@@ -199,14 +189,16 @@ export class PrismaUnitOfMeasureRepository implements UnitOfMeasureRepository {
   private toDomain(row: Prisma.UnitOfMeasureGetPayload<object>): UnitOfMeasure {
     const nameR = EntityName.create(row.name, 'uomName');
     if (nameR.isErr) throw new Error(`Persisted UoM ${row.id} has invalid name`);
-    return UnitOfMeasure.reconstitute({
-      id: UnitOfMeasureId.fromString(row.id),
-      code: row.code,
-      name: nameR.value,
-      symbol: row.symbol,
-      dimension: row.dimension as UomDimension,
-      toBaseFactor: Number(row.toBaseFactor),
-      isActive: row.isActive,
-    });
+    return UnitOfMeasure.reconstitute(
+      UnitOfMeasureId.fromString(row.id),
+      {
+        code: row.code,
+        name: nameR.value,
+        symbol: row.symbol,
+        dimension: row.dimension as UomDimension,
+        toBaseFactor: Number(row.toBaseFactor),
+        isActive: row.isActive,
+      },
+    );
   }
 }
