@@ -36,7 +36,7 @@ import { TenantContextMiddleware } from './shared-kernel/infrastructure/tenant-c
     }),
 
     LoggerModule.forRootAsync({
-      useFactory: (): Parameters<typeof LoggerModule.forRoot>[0] => ({
+      useFactory: () => ({
         pinoHttp: {
           level: process.env.LOG_LEVEL ?? 'info',
           transport:

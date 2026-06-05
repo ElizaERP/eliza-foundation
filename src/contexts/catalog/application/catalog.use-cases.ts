@@ -10,8 +10,8 @@ import {
   CategoryRepository,
   UNIT_OF_MEASURE_REPOSITORY,
   UnitOfMeasureRepository,
-} from '../../domain';
-import { CategoryView, UnitOfMeasureView, toCategoryView, toUomView } from '../dto/catalog.views';
+} from '@eliza/contexts/catalog/domain';
+import { CategoryView, UnitOfMeasureView, toCategoryView, toUomView } from '@eliza/contexts/catalog/application/dto/catalog.views';
 
 // =====================================================================
 // CreateCategory

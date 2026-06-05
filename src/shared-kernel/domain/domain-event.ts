@@ -59,7 +59,7 @@ export abstract class DomainEvent {
   }
 
   /** Payload específico del evento, serializable a JSON. */
-  abstract payload(): Record<string, unknown>;
+  abstract payload(): Record<string, any>;
 
   toJSON(): Record<string, unknown> {
     return {

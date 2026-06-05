@@ -23,8 +23,8 @@ import {
   ProductType,
   UNIT_OF_MEASURE_REPOSITORY,
   UnitOfMeasureRepository,
-} from '../../domain';
-import { ProductView, toProductView } from '../dto/catalog.views';
+} from '@eliza/contexts/catalog/domain';
+import { ProductView, toProductView } from '@eliza/contexts/catalog/application/dto/catalog.views';
 
 // =====================================================================
 // CreateProduct

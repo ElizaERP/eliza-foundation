@@ -20,8 +20,8 @@ import {
   AuditLogRepository,
   AuditQueryFilter,
   VerifyChainResult,
-} from '../../domain';
-import { AuditEntryView, toAuditEntryView } from '../dto/audit-entry.view';
+} from '@eliza/contexts/audit/domain';
+import { AuditEntryView, toAuditEntryView } from '@eliza/contexts/audit/application/dto/audit-entry.view';
 
 // =====================================================================
 // RecordAudit — append explícito desde código de aplicación
