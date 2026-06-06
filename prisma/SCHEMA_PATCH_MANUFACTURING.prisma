@@ -1,0 +1,116 @@
+// =====================================================================
+// FRAGMENTO PARA AGREGAR AL prisma/schema.prisma EXISTENTE
+// =====================================================================
+//
+// PASO 1: En el bloque `datasource db`, añade "manufacturing" al array `schemas`:
+//
+//   schemas = ["tenant", "iam", "audit", "platform", "catalog", "inventory", "manufacturing"]
+//
+// PASO 2: Pega los siguientes enums y models al FINAL del archivo:
+// =====================================================================
+
+// ---------- Enums ----------
+
+enum EstadoOrdenProduccion {
+  Planificada
+  EnProceso
+  Completada
+  Cerrada
+  Cancelada
+
+  @@schema("manufacturing")
+}
+
+enum PrioridadProduccion {
+  Alta
+  Media
+  Baja
+
+  @@schema("manufacturing")
+}
+
+// ---------- OrdenProduccion ----------
+
+model OrdenProduccion {
+  id                    String                 @id @db.Uuid
+  tenantId              String                 @map("tenant_id") @db.Uuid
+  codigo                String                 @db.VarChar(50)
+  productoTerminadoId   String                 @map("producto_terminado_id") @db.Uuid
+  productoTerminadoCode String                 @map("producto_terminado_code") @db.VarChar(50)
+  productoTerminadoName String                 @map("producto_terminado_name") @db.VarChar(200)
+  cantidadObjetivo      Decimal                @map("cantidad_objetivo") @db.Decimal(18, 6)
+  estado                EstadoOrdenProduccion  @default(Planificada)
+  prioridad             PrioridadProduccion    @default(Media)
+  componentes           Json                   @default("[]")
+  materialesReservados  Boolean                @default(false) @map("materiales_reservados")
+  notas                 String?
+  canceladoMotivo       String?                @map("cancelado_motivo")
+  canceladoPor          String?                @map("cancelado_por") @db.Uuid
+  canceladoEn           DateTime?              @map("cancelado_en") @db.Timestamptz
+  fechaProgramada       DateTime?              @map("fecha_programada") @db.Timestamptz
+  iniciadoEn            DateTime?              @map("iniciado_en") @db.Timestamptz
+  completadoEn          DateTime?              @map("completado_en") @db.Timestamptz
+  cerradoEn             DateTime?              @map("cerrado_en") @db.Timestamptz
+  version               Int                    @default(1)
+  createdAt             DateTime               @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt             DateTime               @updatedAt @map("updated_at") @db.Timestamptz
+
+  consumos        ConsumoMp[]
+  lotesProducidos LoteProducido[]
+
+  @@unique([tenantId, codigo])
+  @@index([tenantId])
+  @@index([tenantId, estado])
+  @@index([productoTerminadoId])
+  @@index([fechaProgramada])
+  @@map("ordenes_produccion")
+  @@schema("manufacturing")
+}
+
+// ---------- ConsumoMp ----------
+
+model ConsumoMp {
+  id                 String   @id @db.Uuid
+  ordenProduccionId  String   @map("orden_produccion_id") @db.Uuid
+  tenantId           String   @map("tenant_id") @db.Uuid
+  productId          String   @map("product_id") @db.Uuid
+  productCode        String   @map("product_code") @db.VarChar(50)
+  loteId             String   @map("lote_id") @db.Uuid
+  codigoLote         String   @map("codigo_lote") @db.VarChar(50)
+  cantidad           Decimal  @db.Decimal(18, 6)
+  unidadMedida       String   @map("unidad_medida") @db.VarChar(10)
+  movimientoId       String   @map("movimiento_id") @db.Uuid
+  consumidoEn        DateTime @map("consumido_en") @db.Timestamptz
+
+  ordenProduccion OrdenProduccion @relation(fields: [ordenProduccionId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([ordenProduccionId])
+  @@index([productId])
+  @@index([loteId])
+  @@map("consumos_mp")
+  @@schema("manufacturing")
+}
+
+// ---------- LoteProducido ----------
+
+model LoteProducido {
+  id                String   @id @db.Uuid
+  ordenProduccionId String   @map("orden_produccion_id") @db.Uuid
+  tenantId          String   @map("tenant_id") @db.Uuid
+  loteId            String   @map("lote_id") @db.Uuid
+  codigoLote        String   @map("codigo_lote") @db.VarChar(50)
+  productId         String   @map("product_id") @db.Uuid
+  cantidad          Decimal  @db.Decimal(18, 6)
+  locationId        String   @map("location_id") @db.Uuid
+  movimientoId      String   @map("movimiento_id") @db.Uuid
+  producidoEn       DateTime @map("producido_en") @db.Timestamptz
+
+  ordenProduccion OrdenProduccion @relation(fields: [ordenProduccionId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([ordenProduccionId])
+  @@index([loteId])
+  @@map("lotes_producidos")
+  @@schema("manufacturing")
+}
