@@ -12,6 +12,7 @@ import { TenantContextModule } from './contexts/tenant/tenant.module';
 import { FoundationDiagnosticsModule } from './shared-kernel/infrastructure/foundation-diagnostics.module';
 import { SharedKernelModule } from './shared-kernel/shared-kernel.module';
 import { TenantContextMiddleware } from './shared-kernel/infrastructure/tenant-context/tenant-context.middleware';
+import { InventoryContextModule } from './contexts/inventory/inventory.module';
 
 /**
  * AppModule — raíz del Modular Monolith.
@@ -83,6 +84,7 @@ import { TenantContextMiddleware } from './shared-kernel/infrastructure/tenant-c
     OutboxContextModule,    // Sprint 4 ✅ — dispatcher worker + event bus
     TenantContextModule,    // Sprint 1 ✅
     CatalogContextModule,   // Sprint 5 ✅ — primer módulo de negocio
+    InventoryContextModule, // Sprint 6 ✅ — Lotes, Existencias, FEFO, Kardex
   ],
 })
 export class AppModule implements NestModule {
