@@ -66,11 +66,12 @@ import { WarehousesController } from '@eliza/contexts/inventory/interface/http/w
     InventoryExternalEventHandlers,
   ],
   exports: [
-    LOTE_REPOSITORY, EXISTENCIA_REPOSITORY, MOVIMIENTO_REPOSITORY, WAREHOUSE_REPOSITORY, LOCATION_REPOSITORY,
-    // Use cases exportados para cross-BC (Manufacturing, Sales, Procurement)
-    RegisterLotUseCase, ReceiveInventoryUseCase,
-    ReserveStockUseCase, ReleaseReservationUseCase,
-  ],
+      LOTE_REPOSITORY, EXISTENCIA_REPOSITORY, MOVIMIENTO_REPOSITORY, WAREHOUSE_REPOSITORY, LOCATION_REPOSITORY,
+      // Use cases exportados para cross-BC (Manufacturing, Sales, Procurement)
+      RegisterLotUseCase, ReceiveInventoryUseCase,
+      ReserveStockUseCase, ReleaseReservationUseCase,
+      DispatchInventoryUseCase,
+    ],
 })
 export class InventoryContextModule implements OnApplicationBootstrap {
   constructor(private readonly externalHandlers: InventoryExternalEventHandlers) {}

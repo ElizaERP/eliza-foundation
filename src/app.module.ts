@@ -14,6 +14,7 @@ import { SharedKernelModule } from './shared-kernel/shared-kernel.module';
 import { TenantContextMiddleware } from './shared-kernel/infrastructure/tenant-context/tenant-context.middleware';
 import { InventoryContextModule } from './contexts/inventory/inventory.module';
 import { ManufacturingContextModule } from './contexts/manufacturing/manufacturing.module';
+import { SalesContextModule } from './contexts/sales/sales.module';
 
 /**
  * AppModule — raíz del Modular Monolith.
@@ -87,6 +88,7 @@ import { ManufacturingContextModule } from './contexts/manufacturing/manufacturi
     CatalogContextModule,   // Sprint 5 ✅ — primer módulo de negocio
     InventoryContextModule, // Sprint 6 ✅ — Lotes, Existencias, FEFO, Kardex
     ManufacturingContextModule, // Sprint 7 ✅ — órdenes de producción
+    SalesContextModule,         // Sprint 8 ✅ — Clientes y Pedidos de Venta
   ],
 })
 export class AppModule implements NestModule {
