@@ -72,3 +72,6 @@ terraform
 # Kubernetes manifests (se aplican aparte, no van en la imagen)
 k8s
 keycloak
+
+# Cache de pnpm (no debe entrar al contexto de build)
+.pnpm-store

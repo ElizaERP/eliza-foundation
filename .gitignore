@@ -52,3 +52,6 @@ Thumbs.db
 *.key
 secrets/
 .dev-keys/
+
+# Cache de pnpm creada por el contenedor de herramientas (DEV-19)
+.pnpm-store/
