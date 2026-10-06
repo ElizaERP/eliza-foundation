@@ -1,4 +1,4 @@
-import { Module, OnApplicationBootstrap } from '@nestjs/common';
+import { Module } from '@nestjs/common';
 
 import { CatalogContextModule } from '@eliza/contexts/catalog/catalog.module';
 import { InventoryContextModule } from '@eliza/contexts/inventory/inventory.module';
@@ -67,10 +67,7 @@ import { SalesOrdersController } from '@eliza/contexts/sales/interface/http/sale
   ],
   exports: [CLIENTE_REPOSITORY, ORDEN_VENTA_REPOSITORY],
 })
-export class SalesContextModule implements OnApplicationBootstrap {
-  constructor(private readonly externalHandlers: SalesExternalEventHandlers) {}
-
-  onApplicationBootstrap(): void {
-    this.externalHandlers.onModuleInit();
-  }
-}
+// Los handlers externos inicializan solos: NestJS invoca su onModuleInit().
+// (Antes se llamaba además a mano en onApplicationBootstrap, lo que lo
+// ejecutaba dos veces y, al implementarse, duplicaría las suscripciones.)
+export class SalesContextModule {}
