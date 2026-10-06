@@ -15,30 +15,17 @@
  */
 
 import { PrismaClient, ProductStatus, ProductType, UomDimension } from '@prisma/client';
-import { ulid } from 'ulid';
+import { v7 as uuidv7 } from 'uuid';
 
 const prisma = new PrismaClient();
 
 const TENANT_ID = '7c9e6679-7425-40de-944b-e07fc1f90ae7';
 const PLATFORM_ADMIN_ID = '00000000-0000-0000-0000-000000000001';
 
-function ulidToUuid(s: string): string {
-  const ALPHABET = '0123456789ABCDEFGHJKMNPQRSTVWXYZ';
-  const bytes = new Uint8Array(16);
-  let bits = 0, value = 0, idx = 0;
-  for (const c of s.toUpperCase()) {
-    value = (value << 5) | ALPHABET.indexOf(c);
-    bits += 5;
-    if (bits >= 8) {
-      bits -= 8;
-      bytes[idx++] = (value >> bits) & 0xff;
-      if (idx === 16) break;
-    }
-  }
-  const hex = Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join('');
-  return `${hex.slice(0,8)}-${hex.slice(8,12)}-${hex.slice(12,16)}-${hex.slice(16,20)}-${hex.slice(20,32)}`;
-}
-const uid = () => ulidToUuid(ulid());
+// UUID v7 RFC 9562: ordenable por tiempo y válido para Identifier (uuid.validate).
+// Antes se convertía un ULID a mano, lo que producía UUIDs con versión/variante
+// inválidas y hacía fallar la API al leer el catálogo (500).
+const uid = () => uuidv7();
 
 async function main() {
   const now = new Date();
