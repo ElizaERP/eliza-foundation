@@ -6,6 +6,8 @@ import {
 } from '@nestjs/common';
 
 import { CLOCK_PORT, ClockPort } from '@eliza/shared-kernel/application/ports';
+import { Prisma } from '@prisma/client';
+
 import { PrismaService } from '@eliza/shared-kernel/infrastructure/prisma/prisma.service';
 
 import {
@@ -32,7 +34,9 @@ import {
  *   iam.UserActivated.v1       → ++activeUserCount
  *   iam.UserSuspended.v1       → --activeUserCount
  *
- * Idempotencia: usa ProjectionCheckpoint para saltar eventos ya procesados.
+ * Idempotencia: platform.processed_events (proyección, evento) en la misma
+ * transacción que el read model. ProjectionCheckpoint queda solo como
+ * métrica (último evento, total procesado, último error).
  *
  * Se ejecuta en el handler del EventBus — funciona tanto con InMemoryEventBus
  * como con RedisStreamsEventBus.
@@ -65,15 +69,26 @@ export class TenantSummaryProjector implements OnApplicationBootstrap {
   }
 
   private async handle(message: BusMessage): Promise<void> {
-    // Idempotencia: ¿ya lo procesamos?
-    const cp = await this.checkpoint.getCheckpoint(TenantSummaryProjector.NAME);
-    if (cp?.lastProcessedEventId === message.id) {
-      this.logger.debug(`Skipping already-processed event ${message.id}`);
-      return;
-    }
-
     try {
-      await this.applyEvent(message);
+      // Idempotencia real: registrar el evento y aplicar el cambio en UNA
+      // transacción. Si (proyección, evento) ya existe, no se toca el read
+      // model. Cubre reentregas fuera de orden (reclaimStuck, reintentos),
+      // no solo la repetición del último evento.
+      const applied = await this.prisma.unsafeWithoutTenant(async (tx) => {
+        const inserted = await tx.$executeRaw`
+          INSERT INTO platform.processed_events (projection_name, event_id)
+          VALUES (${TenantSummaryProjector.NAME}, ${message.id}::uuid)
+          ON CONFLICT DO NOTHING`;
+        if (inserted === 0) return false;
+        await this.applyEvent(tx, message);
+        return true;
+      }, `TenantSummary projection — ${message.type}`);
+
+      if (!applied) {
+        this.logger.debug(`Skipping already-processed event ${message.id}`);
+        return;
+      }
+
       await this.checkpoint.recordSuccess({
         projectionName: TenantSummaryProjector.NAME,
         eventId: message.id,
@@ -89,15 +104,14 @@ export class TenantSummaryProjector implements OnApplicationBootstrap {
     }
   }
 
-  private async applyEvent(message: BusMessage): Promise<void> {
+  private async applyEvent(tx: Prisma.TransactionClient, message: BusMessage): Promise<void> {
     const tenantId = message.tenantId;
     const occurredAt = new Date(message.occurredAt);
 
     switch (message.type) {
       case 'tenant.TenantCreated.v1': {
         const p = message.payload as { code: string; name: string; status: string; plan: string };
-        await this.prisma.unsafeWithoutTenant(
-          (tx) => tx.tenantSummary.upsert({
+        await tx.tenantSummary.upsert({
             where: { tenantId },
             create: {
               tenantId,
@@ -118,51 +132,46 @@ export class TenantSummaryProjector implements OnApplicationBootstrap {
               lastEventAt: occurredAt,
               lastEventType: message.type,
             },
-          }),
-          'TenantSummary projection — TenantCreated',
-        );
+          });
         break;
       }
 
       case 'tenant.TenantActivated.v1':
       case 'tenant.TenantReactivated.v1':
-        await this.updateStatus(tenantId, 'Active', message.type, occurredAt);
+        await this.updateStatus(tx, tenantId, 'Active', message.type, occurredAt);
         break;
 
       case 'tenant.TenantSuspended.v1':
-        await this.updateStatus(tenantId, 'Suspended', message.type, occurredAt);
+        await this.updateStatus(tx, tenantId, 'Suspended', message.type, occurredAt);
         break;
 
       case 'tenant.TenantDeleted.v1':
-        await this.updateStatus(tenantId, 'Deleted', message.type, occurredAt);
+        await this.updateStatus(tx, tenantId, 'Deleted', message.type, occurredAt);
         break;
 
       case 'tenant.TenantPlanChanged.v1': {
         const p = message.payload as { newPlan: string };
-        await this.prisma.unsafeWithoutTenant(
-          (tx) => tx.tenantSummary.update({
+        await tx.tenantSummary.update({
             where: { tenantId },
             data: { plan: p.newPlan, lastEventAt: occurredAt, lastEventType: message.type },
-          }),
-          'TenantSummary projection — PlanChanged',
-        );
+          });
         break;
       }
 
       case 'iam.MembershipGranted.v1':
-        await this.incrementCount(tenantId, 'userCount', 1, message.type, occurredAt);
+        await this.incrementCount(tx, tenantId, 'userCount', 1, message.type, occurredAt);
         break;
 
       case 'iam.MembershipRevoked.v1':
-        await this.incrementCount(tenantId, 'userCount', -1, message.type, occurredAt);
+        await this.incrementCount(tx, tenantId, 'userCount', -1, message.type, occurredAt);
         break;
 
       case 'iam.UserActivated.v1':
-        await this.incrementCount(tenantId, 'activeUserCount', 1, message.type, occurredAt);
+        await this.incrementCount(tx, tenantId, 'activeUserCount', 1, message.type, occurredAt);
         break;
 
       case 'iam.UserSuspended.v1':
-        await this.incrementCount(tenantId, 'activeUserCount', -1, message.type, occurredAt);
+        await this.incrementCount(tx, tenantId, 'activeUserCount', -1, message.type, occurredAt);
         break;
 
       default:
@@ -170,33 +179,28 @@ export class TenantSummaryProjector implements OnApplicationBootstrap {
     }
   }
 
-  private async updateStatus(tenantId: string, status: string, eventType: string, occurredAt: Date): Promise<void> {
-    await this.prisma.unsafeWithoutTenant(
-      (tx) => tx.tenantSummary.updateMany({
+  private async updateStatus(tx: Prisma.TransactionClient, tenantId: string, status: string, eventType: string, occurredAt: Date): Promise<void> {
+    await tx.tenantSummary.updateMany({
         where: { tenantId },
         data: { status, lastEventAt: occurredAt, lastEventType: eventType },
-      }),
-      `TenantSummary projection — ${eventType}`,
-    );
+      });
   }
 
   private async incrementCount(
+    tx: Prisma.TransactionClient,
     tenantId: string,
     field: 'userCount' | 'activeUserCount',
     delta: number,
     eventType: string,
     occurredAt: Date,
   ): Promise<void> {
-    await this.prisma.unsafeWithoutTenant(
-      (tx) => tx.tenantSummary.update({
+    await tx.tenantSummary.update({
         where: { tenantId },
         data: {
           [field]: { increment: delta },
           lastEventAt: occurredAt,
           lastEventType: eventType,
         },
-      }),
-      `TenantSummary projection — ${eventType}`,
-    );
+      });
   }
 }

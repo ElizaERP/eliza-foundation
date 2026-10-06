@@ -249,6 +249,19 @@ model ProjectionCheckpoint {
   @@schema("platform")
 }
 
+/// Idempotencia de proyecciones: un registro por (proyección, evento) procesado.
+/// Se inserta en la MISMA transacción que actualiza el read model; si ya
+/// existe, el evento se ignora (entrega at-least-once sin doble efecto).
+model ProcessedEvent {
+  projectionName String   @map("projection_name") @db.VarChar(100)
+  eventId        String   @map("event_id") @db.Uuid
+  processedAt    DateTime @default(now()) @map("processed_at") @db.Timestamptz()
+
+  @@id([projectionName, eventId])
+  @@map("processed_events")
+  @@schema("platform")
+}
+
 // =====================================================================
 // Catalog (Sprint 5) — productos, categorías, unidades, BOM
 // =====================================================================
