@@ -78,6 +78,10 @@ seed-inventory:  ## Carga datos de Inventory (bodegas, ubicaciones, lotes)
 db-rls-check:  ## Verifica aislamiento multi-tenant (RLS) contra la BD local — no deja datos
 	docker exec -i eliza-postgres psql -U postgres -d eliza < scripts/rls-check.sql
 
+.PHONY: fase0-validate
+fase0-validate:  ## Fase 0: valida el PR con evidencia (build, ARM64, compose desde cero, RLS)
+	bash scripts/fase0/pr-validation.sh
+
 .PHONY: db-reset
 db-reset:  ## DROP + migrate + seed (cuidado: borra todo)
 	DATABASE_URL="$(MIGRATION_URL)" pnpm prisma migrate reset --force
