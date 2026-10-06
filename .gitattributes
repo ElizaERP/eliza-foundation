@@ -1,0 +1,14 @@
+# Normaliza finales de línea: LF en el repo, sin importar el SO.
+# Evita que Windows (CRLF) marque como "modificados" archivos sin cambios.
+* text=auto eol=lf
+
+# Scripts de shell siempre LF (CRLF los rompe en Linux/Docker)
+*.sh text eol=lf
+
+# Binarios
+*.png binary
+*.jpg binary
+*.ico binary
+*.pdf binary
+*.docx binary
+*.zip binary

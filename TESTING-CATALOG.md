@@ -22,8 +22,7 @@ echo "Token: ${TOKEN:0:40}..."
 
 # 4. Schema catalog aplicado
 make db-migrate
-# Aplicar también las policies RLS del catalog
-psql "$DATABASE_URL" -f prisma/init/02_catalog_rls.sql
+# Las policies RLS del catalog vienen incluidas en las migraciones
 
 # 5. Datos semilla
 make seed           # tenant + admins (si no se hizo antes)
@@ -515,10 +514,10 @@ curl -s "$API/audit/verify-chain" -H "Authorization: Bearer $TOKEN" | jq
 
 ### "must be member of role app_user"
 
-Falta aplicar el bootstrap SQL para que el rol pueda usar el schema catalog:
+Faltan los permisos de `app_user` sobre el schema catalog. Se otorgan en la migración `20261006000000_enable_rls_policies`; vuelve a migrar:
 
 ```bash
-psql "$DATABASE_URL_MIGRATION" -f prisma/init/02_catalog_rls.sql
+make db-migrate
 ```
 
 ### `product.code_already_exists` cuando intento crear en segundo tenant
@@ -531,9 +530,8 @@ Causa típica: el `tenantId` del `componentProductId` no coincide con el del pro
 
 ### `relation "catalog.products" does not exist`
 
-Migra de nuevo y aplica RLS:
+Migra de nuevo (incluye RLS):
 
 ```bash
 make db-migrate
-psql "$DATABASE_URL_MIGRATION" -f prisma/init/02_catalog_rls.sql
 ```

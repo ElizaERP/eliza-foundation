@@ -13,6 +13,11 @@ OCIR_REGION   ?= iad
 OCIR_TENANCY  ?= my-tenancy-namespace
 FULL_IMAGE    := $(OCIR_REGION).ocir.io/$(OCIR_TENANCY)/$(IMAGE_NAME):$(IMAGE_TAG)
 
+# Conexión PRIVILEGIADA para migraciones y seeds (DDL + escribe sin RLS).
+# La app NUNCA usa esta URL: corre con app_user vía DATABASE_URL del .env.
+# Local: superusuario de docker-compose. Sobrescribible: make db-migrate MIGRATION_URL=...
+MIGRATION_URL ?= postgresql://postgres:postgres@localhost:5432/eliza?schema=public
+
 # ---------- Help ----------
 .PHONY: help
 help:  ## Muestra esta ayuda
@@ -43,11 +48,11 @@ infra-logs:  ## Tail de logs de la infra
 # ---------- Database ----------
 .PHONY: db-migrate
 db-migrate:  ## Aplica migraciones de Prisma (dev mode)
-	pnpm prisma migrate dev
+	DATABASE_URL="$(MIGRATION_URL)" pnpm prisma migrate dev
 
 .PHONY: db-migrate-deploy
 db-migrate-deploy:  ## Aplica migraciones en modo producción (sin prompts)
-	pnpm prisma migrate deploy
+	DATABASE_URL="$(MIGRATION_URL)" pnpm prisma migrate deploy
 
 .PHONY: db-generate
 db-generate:  ## Regenera el Prisma client
@@ -59,22 +64,23 @@ db-studio:  ## Abre Prisma Studio (UI para la BD)
 
 .PHONY: db-seed
 db-seed:  ## Carga datos de prueba (tenant + admin users)
-	pnpm db:seed
+	DATABASE_URL="$(MIGRATION_URL)" pnpm db:seed
 
 .PHONY: seed-catalog
 seed-catalog:  ## Carga datos de Catalog (UoMs + categorías + productos + BOMs)
-	pnpm ts-node prisma/seed-catalog.ts
+	DATABASE_URL="$(MIGRATION_URL)" pnpm ts-node prisma/seed-catalog.ts
 
-.PHONY: db-rls
-db-rls:  ## Aplica policies RLS adicionales (catalog) — correr después de migrate
-	@if [ -z "$$DATABASE_URL_MIGRATION" ]; then \
-		echo "❌ Set DATABASE_URL_MIGRATION (uses migration_user with DDL rights)"; exit 1; \
-	fi
-	psql "$$DATABASE_URL_MIGRATION" -f prisma/init/02_catalog_rls.sql
+.PHONY: seed-inventory
+seed-inventory:  ## Carga datos de Inventory (bodegas, ubicaciones, lotes)
+	DATABASE_URL="$(MIGRATION_URL)" pnpm ts-node prisma/seed-inventory.ts
+
+.PHONY: db-rls-check
+db-rls-check:  ## Verifica aislamiento multi-tenant (RLS) contra la BD local — no deja datos
+	docker exec -i eliza-postgres psql -U postgres -d eliza < scripts/rls-check.sql
 
 .PHONY: db-reset
 db-reset:  ## DROP + migrate + seed (cuidado: borra todo)
-	pnpm prisma migrate reset --force
+	DATABASE_URL="$(MIGRATION_URL)" pnpm prisma migrate reset --force
 
 # ---------- App ----------
 .PHONY: dev
@@ -114,6 +120,10 @@ jwks-server:  ## Sirve el JWKS local en :9999 (para validación sin Keycloak)
 .PHONY: docker-build
 docker-build:  ## Construye la imagen Docker
 	docker build -t $(IMAGE_NAME):$(IMAGE_TAG) -t $(IMAGE_NAME):latest .
+
+.PHONY: docker-build-arm64
+docker-build-arm64:  ## Construye la imagen para la VM OCI A1 (ARM64) con buildx
+	docker buildx build --platform linux/arm64 -t $(IMAGE_NAME):$(IMAGE_TAG)-arm64 --load .
 
 .PHONY: docker-run
 docker-run:  ## Corre la app + infra en contenedores (modo writers/worker)

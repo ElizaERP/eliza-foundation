@@ -14,8 +14,9 @@ services:
       POSTGRES_DB: eliza
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
-      # Force every connection to set app.tenant_id explicitly.
-      # See prisma/migrations/init/01_roles_and_rls.sql for role setup.
+      # prisma/init/01_bootstrap.sql crea roles (app_user), la BD de
+      # Keycloak y helpers. La RLS NO va aquí: viaja en las migraciones
+      # de Prisma (20261006000000_enable_rls_policies).
     ports:
       - "5432:5432"
     volumes:

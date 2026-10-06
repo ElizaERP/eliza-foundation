@@ -41,27 +41,17 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Setup Node.js 20
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-
+      # pnpm primero: la versión sale de "packageManager" en package.json
       - name: Setup pnpm
-        uses: pnpm/action-setup@v3
+        uses: pnpm/action-setup@v4
         with:
-          version: 9
           run_install: false
 
-      - name: Get pnpm store directory
-        shell: bash
-        run: echo "STORE_PATH=$(pnpm store path --silent)" >> $GITHUB_ENV
-
-      - name: Cache pnpm store
-        uses: actions/cache@v4
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
         with:
-          path: ${{ env.STORE_PATH }}
-          key: ${{ runner.os }}-pnpm-store-${{ hashFiles('**/pnpm-lock.yaml') }}
-          restore-keys: ${{ runner.os }}-pnpm-store-
+          node-version: '22'
+          cache: 'pnpm'
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
@@ -72,6 +62,8 @@ jobs:
       - name: Lint
         run: pnpm lint
 
+      # Incluye la migración de RLS (20261006000000_enable_rls_policies):
+      # si una policy deja de aplicar, el CI falla aquí.
       - name: Apply migrations
         env:
           DATABASE_URL: postgresql://postgres:postgres@localhost:5432/eliza_test
@@ -88,6 +80,9 @@ jobs:
       - name: Build
         run: pnpm build
 
+      - name: Verify build entrypoint
+        run: test -f dist/main.js
+
       - name: Upload coverage to artifacts
         uses: actions/upload-artifact@v4
         if: always()
@@ -96,13 +91,19 @@ jobs:
           path: coverage/
 
   docker-build:
-    name: Docker Image Build (no push)
+    name: Docker Image Build arm64 (no push)
     runs-on: ubuntu-latest
     needs: lint-and-test
     if: github.event_name == 'pull_request'
 
     steps:
       - uses: actions/checkout@v4
+
+      # La VM de destino (OCI A1 Flex) es ARM64: validamos esa arquitectura.
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm64
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -112,6 +113,7 @@ jobs:
         with:
           context: .
           push: false
+          platforms: linux/arm64
           tags: eliza-foundation:pr-${{ github.event.number }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
