@@ -56,7 +56,7 @@ step "5. build genera dist/main.js" bash -c 'pnpm build && test -f dist/main.js'
 if [ "$ARM64" = 1 ]; then
   step "6. docker build linux/arm64" docker buildx build --platform linux/arm64 -t eliza-foundation:fase0-arm64 --load .
   step "7. imagen arm64: node arm64, engine Prisma arm64 y dist/main.js" docker run --rm --platform linux/arm64 --entrypoint sh eliza-foundation:fase0-arm64 -c \
-    "node -p process.arch | grep -qx arm64 && ls node_modules/.prisma/client/ | grep -q 'linux-arm64' && test -f dist/main.js && echo 'arm64 OK'"
+    "node -p process.arch | grep -qx arm64 && find node_modules -name 'libquery_engine-linux-arm64*' | grep -q . && test -f dist/main.js && echo 'arm64 OK'"
 else
   log ""; log "▶ 6-7. build ARM64 omitido (--no-arm64): se valida en el CI al abrir el PR"
 fi

@@ -96,9 +96,10 @@ ENV NODE_ENV=production \
 
 EXPOSE 3000
 
-# Healthcheck sin wget/curl (no vienen en slim): usa el fetch nativo de Node 22
+# Healthcheck sin wget/curl (no vienen en slim): usa el fetch nativo de Node 22.
+# La API sirve la salud en /api/health (prefijo global "api").
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
-  CMD node -e "fetch('http://localhost:3000/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+  CMD node -e "fetch('http://localhost:3000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
 
 # tini como PID 1 — propaga SIGTERM para graceful shutdown, así el
 # OutboxDispatcher puede terminar su batch antes de morir.

@@ -22,7 +22,7 @@ class SystemClock implements ClockPort {
   imports: [
     ClsModule.forRoot({
       global: true,
-      middleware: { mount: true, generateId: true },
+      middleware: { mount: false, generateId: true }, // se monta en AppModule.configure (orden)
     }),
   ],
   providers: [
