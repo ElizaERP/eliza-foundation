@@ -7,6 +7,7 @@ import {
 
 import { CLOCK_PORT, ClockPort } from '@eliza/shared-kernel/application/ports';
 import { Prisma } from '@prisma/client';
+import { v5 as uuidv5, validate as uuidValidate } from 'uuid';
 
 import { PrismaService } from '@eliza/shared-kernel/infrastructure/prisma/prisma.service';
 
@@ -68,7 +69,20 @@ export class TenantSummaryProjector implements OnApplicationBootstrap {
     this.logger.log('TenantSummaryProjector subscribed to 10 event types');
   }
 
+  /**
+   * Clave de idempotencia como UUID (processed_events.event_id y el checkpoint
+   * son columnas uuid). Los eventos nuevos traen eventId UUID v7; los antiguos
+   * traian un ULID, que se convierte de forma determinista con UUID v5 para que
+   * el mismo evento produzca siempre la misma clave.
+   */
+  private static dedupKey(eventId: string): string {
+    return uuidValidate(eventId) ? eventId : uuidv5(eventId, TenantSummaryProjector.LEGACY_ID_NAMESPACE);
+  }
+
+  private static readonly LEGACY_ID_NAMESPACE = '6f1a1c3e-2b0d-4c8e-9a51-3d7e0b2f9c41';
+
   private async handle(message: BusMessage): Promise<void> {
+    const eventKey = TenantSummaryProjector.dedupKey(message.id);
     try {
       // Idempotencia real: registrar el evento y aplicar el cambio en UNA
       // transacción. Si (proyección, evento) ya existe, no se toca el read
@@ -77,7 +91,7 @@ export class TenantSummaryProjector implements OnApplicationBootstrap {
       const applied = await this.prisma.unsafeWithoutTenant(async (tx) => {
         const inserted = await tx.$executeRaw`
           INSERT INTO platform.processed_events (projection_name, event_id)
-          VALUES (${TenantSummaryProjector.NAME}, ${message.id}::uuid)
+          VALUES (${TenantSummaryProjector.NAME}, ${eventKey}::uuid)
           ON CONFLICT DO NOTHING`;
         if (inserted === 0) return false;
         await this.applyEvent(tx, message);
@@ -91,7 +105,7 @@ export class TenantSummaryProjector implements OnApplicationBootstrap {
 
       await this.checkpoint.recordSuccess({
         projectionName: TenantSummaryProjector.NAME,
-        eventId: message.id,
+        eventId: eventKey,
         now: this.clock.now(),
       });
     } catch (e) {

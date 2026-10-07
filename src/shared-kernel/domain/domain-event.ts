@@ -1,4 +1,4 @@
-import { ulid } from 'ulid';
+import { newTimeOrderedUuid } from './identifier';
 
 /**
  * Domain Event base (DDD + Event-Driven).
@@ -7,7 +7,7 @@ import { ulid } from 'ulid';
  *   1. Ser inmutable (frozen tras construcción).
  *   2. Llevar `tenantId` obligatorio (multi-tenancy first class).
  *   3. Llevar `occurredAt` con timezone (UTC).
- *   4. Tener `eventId` único y ordenable temporalmente (ULID).
+ *   4. Tener `eventId` único y ordenable temporalmente (UUID v7).
  *   5. Declarar `eventType` y `eventVersion` para versionado de contratos.
  *   6. Soportar `correlationId` y `causationId` para trazabilidad
  *      cross-context (Saga, Outbox, Audit).
@@ -52,7 +52,7 @@ export abstract class DomainEvent {
     occurredAt?: Date;
   }) {
     this.metadata = Object.freeze({
-      eventId: metadata.eventId ?? ulid(),
+      eventId: metadata.eventId ?? newTimeOrderedUuid(),
       occurredAt: metadata.occurredAt ?? new Date(),
       ...metadata,
     });

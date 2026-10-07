@@ -2,7 +2,7 @@ import { Injectable, Logger, NestMiddleware, UnauthorizedException } from '@nest
 import { ConfigService } from '@nestjs/config';
 import { NextFunction, Request, Response } from 'express';
 import { ClsService } from 'nestjs-cls';
-import { ulid } from 'ulid';
+import { Identifier, newTimeOrderedUuid } from '@eliza/shared-kernel/domain';
 
 import {
   CLS_CORRELATION_ID,
@@ -55,8 +55,11 @@ export class TenantContextMiddleware implements NestMiddleware {
 
   use(req: Request, res: Response, next: NextFunction): void {
     // 1. Generar / propagar correlationId
+    // Se acepta el del cliente solo si es un UUID (se guarda en columnas uuid,
+    // p. ej. audit.audit_logs.correlation_id); si no, se genera uno (UUID v7).
+    const incoming = req.headers['x-correlation-id'] as string | undefined;
     const correlationId =
-      (req.headers['x-correlation-id'] as string | undefined) ?? ulid();
+      incoming && Identifier.isValidUuid(incoming) ? incoming : newTimeOrderedUuid();
     this.cls.set(CLS_CORRELATION_ID, correlationId);
     res.setHeader('X-Correlation-Id', correlationId);
 

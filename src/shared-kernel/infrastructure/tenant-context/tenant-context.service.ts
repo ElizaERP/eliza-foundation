@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { ClsService } from 'nestjs-cls';
-import { ulid } from 'ulid';
+import { newTimeOrderedUuid } from '@eliza/shared-kernel/domain';
 
 import { TenantContextPort } from '../../application/ports';
 
@@ -58,7 +58,7 @@ export class TenantContextService implements TenantContextPort {
     let id = this.cls.get<string | undefined>(CLS_CORRELATION_ID);
     if (!id) {
       // Genera uno tardíamente si el middleware no lo estableció (ej: jobs).
-      id = ulid();
+      id = newTimeOrderedUuid();
       this.cls.set(CLS_CORRELATION_ID, id);
     }
     return id;
