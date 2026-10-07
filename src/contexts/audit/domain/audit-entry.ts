@@ -155,6 +155,11 @@ export class AuditEntry {
     causationId: string | null;
   }): AuditEntry {
     const id = AuditLogId.generate();
+    // Normalizar a JSON puro, que es lo que realmente guarda la columna jsonb
+    // (sin claves undefined, Date como string...). Asi el hash calculado al
+    // escribir coincide con el que verify-chain recalcula al leer de la BD.
+    const newValues = toJsonValue(args.newValues);
+    const oldValues = toJsonValue(args.oldValues);
     const hash = AuditEntry.computeHash({
       id: id.value,
       tenantId: args.tenantId,
@@ -164,7 +169,7 @@ export class AuditEntry {
       action: args.action.value,
       entityType: args.entityType,
       entityId: args.entityId,
-      newValues: args.newValues,
+      newValues,
       previousHash: args.previousHash,
     });
 
@@ -179,8 +184,8 @@ export class AuditEntry {
       action: args.action,
       entityType: args.entityType,
       entityId: args.entityId,
-      oldValues: args.oldValues,
-      newValues: args.newValues,
+      oldValues,
+      newValues,
       correlationId: args.correlationId,
       causationId: args.causationId,
       previousHash: args.previousHash,
@@ -243,6 +248,12 @@ export class AuditEntry {
     });
     return expected === this.props.hash;
   }
+}
+
+/** Convierte un valor a JSON puro (equivalente a guardarlo y leerlo de una columna jsonb). */
+function toJsonValue(value: unknown): unknown | null {
+  if (value === null || value === undefined) return null;
+  return JSON.parse(JSON.stringify(value)) as unknown;
 }
 
 /**
