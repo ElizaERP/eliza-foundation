@@ -1,5 +1,15 @@
 import { ulid } from 'ulid';
-import { v4 as uuidv4, validate as uuidValidate } from 'uuid';
+import { v4 as uuidv4, v7 as uuidv7, validate as uuidValidate } from 'uuid';
+
+/**
+ * UUID v7 (RFC 9562): valido y ordenable por tiempo (los primeros 48 bits son
+ * el timestamp, igual que un ULID). Reemplaza las conversiones ULID->UUID hechas
+ * a mano en cada contexto, que producian UUID con version/variante invalidas y
+ * hacian fallar la creacion de agregados (Fase 13).
+ */
+export function newTimeOrderedUuid(): string {
+  return uuidv7();
+}
 
 /**
  * Base abstracta para identificadores tipados.

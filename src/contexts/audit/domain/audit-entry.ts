@@ -1,10 +1,8 @@
 import { createHash } from 'node:crypto';
-import { ulid } from 'ulid';
-
-import { DomainError, Guard, Identifier, Result, ValueObject, err, ok } from '@eliza/shared-kernel/domain';
+import { DomainError, Guard, Identifier, Result, ValueObject, err, newTimeOrderedUuid, ok } from '@eliza/shared-kernel/domain';
 
 /**
- * AuditLogId — identifier ordenable temporalmente (ULID convertido a UUID).
+ * AuditLogId — identifier ordenable temporalmente (UUID v7).
  */
 export class AuditLogId extends Identifier<'AuditLog'> {
   private constructor(value: string) {
@@ -14,29 +12,9 @@ export class AuditLogId extends Identifier<'AuditLog'> {
     return new AuditLogId(value);
   }
   static generate(): AuditLogId {
-    // ULID en formato UUID-compatible — primeros 48 bits son timestamp
-    return new AuditLogId(ulidToUuid(ulid()));
+    // UUID v7: los primeros 48 bits son el timestamp
+    return new AuditLogId(newTimeOrderedUuid());
   }
-}
-
-function ulidToUuid(ulidStr: string): string {
-  // ULID es 26 chars base32; lo decodificamos a 16 bytes y formateamos UUID
-  const ALPHABET = '0123456789ABCDEFGHJKMNPQRSTVWXYZ';
-  const bytes = new Uint8Array(16);
-  let bits = 0;
-  let value = 0;
-  let bytesIndex = 0;
-  for (const c of ulidStr.toUpperCase()) {
-    value = (value << 5) | ALPHABET.indexOf(c);
-    bits += 5;
-    if (bits >= 8) {
-      bits -= 8;
-      bytes[bytesIndex++] = (value >> bits) & 0xff;
-      if (bytesIndex === 16) break;
-    }
-  }
-  const hex = Array.from(bytes).map((b) => b.toString(16).padStart(2, '0')).join('');
-  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20, 32)}`;
 }
 
 /**
