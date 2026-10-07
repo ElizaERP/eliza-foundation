@@ -23,7 +23,7 @@ export class QueryOutboxRequest {
 
   @ApiPropertyOptional({ format: 'uuid' })
   @IsOptional()
-  @IsUUID('4')
+  @IsUUID()
   tenantId?: string;
 
   @ApiPropertyOptional({ example: 'tenant.TenantCreated.v1' })
@@ -38,7 +38,7 @@ export class QueryOutboxRequest {
 
   @ApiPropertyOptional({ format: 'uuid' })
   @IsOptional()
-  @IsUUID('4')
+  @IsUUID()
   aggregateId?: string;
 
   @ApiPropertyOptional({ format: 'date-time' })
@@ -68,7 +68,7 @@ export class QueryOutboxRequest {
 
 export class EventIdParam {
   @ApiProperty({ format: 'uuid' })
-  @IsUUID('4')
+  @IsUUID()
   eventId!: string;
 }
 

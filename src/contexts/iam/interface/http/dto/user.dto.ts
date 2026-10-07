@@ -31,7 +31,7 @@ export class CreateUserRequest {
   fullName!: string;
 
   @ApiProperty({ example: '7c9e6679-7425-40de-944b-e07fc1f90ae7', format: 'uuid' })
-  @IsUUID('4')
+  @IsUUID()
   tenantId!: string;
 
   @ApiPropertyOptional({
@@ -75,7 +75,7 @@ export class VersionedActionRequest {
 
 export class GrantMembershipRequest {
   @ApiProperty({ format: 'uuid' })
-  @IsUUID('4')
+  @IsUUID()
   tenantId!: string;
 
   @ApiProperty({ isArray: true, example: ['Manufacturing.Operator'] })
@@ -94,7 +94,7 @@ export class GrantMembershipRequest {
 
 export class RoleChangeRequest {
   @ApiProperty({ format: 'uuid' })
-  @IsUUID('4')
+  @IsUUID()
   tenantId!: string;
 
   @ApiProperty({ example: 'Sales.Manager' })
@@ -111,7 +111,7 @@ export class RoleChangeRequest {
 
 export class UserIdParam {
   @ApiProperty({ format: 'uuid' })
-  @IsUUID('4')
+  @IsUUID()
   id!: string;
 }
 

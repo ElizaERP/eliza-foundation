@@ -175,7 +175,7 @@ export class ListTenantsQuery {
 // =====================================================================
 export class TenantIdParam {
   @ApiProperty({ format: 'uuid' })
-  @IsUUID('4')
+  @IsUUID()
   id!: string;
 }
 
