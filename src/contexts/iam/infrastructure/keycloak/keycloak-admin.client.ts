@@ -153,49 +153,47 @@ export class KeycloakAdminClient {
     await this.request('PUT', `/users/${userId}/execute-actions-email`, actions);
   }
 
-  // -------- Client role operations --------
-  /** Obtiene el internal ID del client `eliza-api` (no es el clientId string). */
-  private async getApiClientInternalId(): Promise<string> {
-    const { body } = await this.request<Array<{ id: string; clientId: string }>>(
+  // -------- Realm role operations --------
+  // Los roles de ELIZA (Tenant.Admin, Sales.Manager, ...) son roles de REALM:
+  // el JWT los trae en `realm_access.roles` y así los definen el realm y los
+  // usuarios sembrados. Se buscan en `/role-mappings/realm/available`, que solo
+  // exige `manage-users`: el usuario técnico no necesita `view-realm` ni
+  // `view-clients` (mínimo privilegio).
+  private async getRealmRoleMappings(
+    userId: string,
+    which: 'assigned' | 'available',
+  ): Promise<Array<{ id: string; name: string }>> {
+    const suffix = which === 'available' ? '/available' : '';
+    const { body } = await this.request<Array<{ id: string; name: string }>>(
       'GET',
-      `/clients?clientId=${encodeURIComponent(this.config.clientId)}`,
+      `/users/${userId}/role-mappings/realm${suffix}`,
     );
-    if (!body || body.length === 0) {
-      throw new Error(`Client '${this.config.clientId}' not found in realm`);
+    return body ?? [];
+  }
+
+  async assignRealmRole(userId: string, roleName: string): Promise<void> {
+    const available = await this.getRealmRoleMappings(userId, 'available');
+    const role = available.find((r) => r.name === roleName);
+    if (!role) {
+      // Idempotente: si ya lo tiene asignado no es un error.
+      const assigned = await this.getRealmRoleMappings(userId, 'assigned');
+      if (assigned.some((r) => r.name === roleName)) return;
+      throw new Error(`Realm role '${roleName}' not found or not assignable`);
     }
-    return body[0].id;
+
+    await this.request('POST', `/users/${userId}/role-mappings/realm`, [
+      { id: role.id, name: role.name },
+    ]);
   }
 
-  async assignClientRole(userId: string, roleName: string): Promise<void> {
-    const clientId = await this.getApiClientInternalId();
+  async revokeRealmRole(userId: string, roleName: string): Promise<void> {
+    const assigned = await this.getRealmRoleMappings(userId, 'assigned');
+    const role = assigned.find((r) => r.name === roleName);
+    if (!role) return; // no-op si el usuario no tiene el rol
 
-    // Obtener el role definition
-    const { body: role } = await this.request<{ id: string; name: string }>(
-      'GET',
-      `/clients/${clientId}/roles/${encodeURIComponent(roleName)}`,
-    );
-    if (!role) throw new Error(`Role '${roleName}' not found in client '${this.config.clientId}'`);
-
-    await this.request(
-      'POST',
-      `/users/${userId}/role-mappings/clients/${clientId}`,
-      [{ id: role.id, name: role.name }],
-    );
-  }
-
-  async revokeClientRole(userId: string, roleName: string): Promise<void> {
-    const clientId = await this.getApiClientInternalId();
-    const { body: role } = await this.request<{ id: string; name: string }>(
-      'GET',
-      `/clients/${clientId}/roles/${encodeURIComponent(roleName)}`,
-    );
-    if (!role) return; // no-op si el role ya no existe
-
-    await this.request(
-      'DELETE',
-      `/users/${userId}/role-mappings/clients/${clientId}`,
-      [{ id: role.id, name: role.name }],
-    );
+    await this.request('DELETE', `/users/${userId}/role-mappings/realm`, [
+      { id: role.id, name: role.name },
+    ]);
   }
 }
 

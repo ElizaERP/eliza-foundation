@@ -128,7 +128,7 @@ export class CreateUser implements UseCase<CreateUserInput, UserView> {
       // existiendo pero sin roles. Audit log lo verá.
       for (const role of input.roles ?? []) {
         try {
-          await this.idp.assignClientRole(keycloakSubject, role);
+          await this.idp.assignRole(keycloakSubject, role);
         } catch (e) {
           this.logger.warn(`Failed to assign role ${role} in Keycloak for ${email.value}: ${(e as Error).message}`);
         }

@@ -42,12 +42,12 @@ export class KeycloakIdentityProvider implements IdentityProviderPort {
     await this.kc.setUserEnabled(keycloakSubject, enabled);
   }
 
-  async assignClientRole(keycloakSubject: string, role: string): Promise<void> {
-    await this.kc.assignClientRole(keycloakSubject, role);
+  async assignRole(keycloakSubject: string, role: string): Promise<void> {
+    await this.kc.assignRealmRole(keycloakSubject, role);
   }
 
-  async revokeClientRole(keycloakSubject: string, role: string): Promise<void> {
-    await this.kc.revokeClientRole(keycloakSubject, role);
+  async revokeRole(keycloakSubject: string, role: string): Promise<void> {
+    await this.kc.revokeRealmRole(keycloakSubject, role);
   }
 
   async updateUserAttributes(
