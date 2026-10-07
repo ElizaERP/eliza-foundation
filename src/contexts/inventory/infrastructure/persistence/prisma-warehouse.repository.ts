@@ -1,8 +1,8 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
-import { ulid } from 'ulid';
 import { PrismaService } from '@eliza/shared-kernel/infrastructure/prisma/prisma.service';
 import { TENANT_CONTEXT_PORT, TenantContextPort } from '@eliza/shared-kernel/application/ports';
+import { newTimeOrderedUuid } from '@eliza/shared-kernel/domain';
 import {
   Location, LocationId, LocationRepository, TipoUbicacion,
   Warehouse, WarehouseId, WarehouseRepository,
@@ -46,7 +46,7 @@ export class PrismaWarehouseRepository implements WarehouseRepository {
       }
       if (events.length > 0) {
         await tx.outboxEvent.createMany({ data: events.map((e) => ({
-          id: ulid(), tenantId: e.metadata.tenantId, aggregateType: e.metadata.aggregateType,
+          id: newTimeOrderedUuid(), tenantId: e.metadata.tenantId, aggregateType: e.metadata.aggregateType,
           aggregateId: e.metadata.aggregateId, eventType: e.metadata.eventType, eventVersion: e.metadata.eventVersion,
           payload: e.payload() as Prisma.InputJsonValue,
           metadata: { eventId: e.metadata.eventId, occurredAt: e.metadata.occurredAt.toISOString(),
@@ -104,7 +104,7 @@ export class PrismaLocationRepository implements LocationRepository {
       }
       if (events.length > 0) {
         await tx.outboxEvent.createMany({ data: events.map((e) => ({
-          id: ulid(), tenantId: e.metadata.tenantId, aggregateType: e.metadata.aggregateType,
+          id: newTimeOrderedUuid(), tenantId: e.metadata.tenantId, aggregateType: e.metadata.aggregateType,
           aggregateId: e.metadata.aggregateId, eventType: e.metadata.eventType, eventVersion: e.metadata.eventVersion,
           payload: e.payload() as Prisma.InputJsonValue,
           metadata: { eventId: e.metadata.eventId, occurredAt: e.metadata.occurredAt.toISOString(),

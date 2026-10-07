@@ -3,6 +3,7 @@ import { Prisma } from '@prisma/client';
 
 import { PrismaService } from '@eliza/shared-kernel/infrastructure/prisma/prisma.service';
 import { TENANT_CONTEXT_PORT, TenantContextPort } from '@eliza/shared-kernel/application/ports';
+import { newTimeOrderedUuid } from '@eliza/shared-kernel/domain';
 
 import {
   Category,
@@ -62,10 +63,9 @@ export class PrismaCategoryRepository implements CategoryRepository {
 
       const events = category.pullDomainEvents();
       if (events.length > 0) {
-        const { ulid } = await import('ulid');
         await tx.outboxEvent.createMany({
           data: events.map((e) => ({
-            id: ulid(),
+            id: newTimeOrderedUuid(),
             tenantId: e.metadata.tenantId,
             aggregateType: e.metadata.aggregateType,
             aggregateId: e.metadata.aggregateId,
