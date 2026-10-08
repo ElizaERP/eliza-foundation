@@ -20,6 +20,8 @@ export const envValidationSchema = Joi.object({
   LOG_LEVEL: Joi.string()
     .valid('fatal', 'error', 'warn', 'info', 'debug', 'trace')
     .default('info'),
+  // json = una linea JSON por evento (estructurado, para servidores); pretty = legible para desarrollo local
+  LOG_FORMAT: Joi.string().valid('json', 'pretty').default('json'),
 
   // PostgreSQL
   DATABASE_URL: Joi.string().uri({ scheme: ['postgresql', 'postgres'] }).required(),

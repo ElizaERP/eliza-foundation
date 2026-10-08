@@ -43,10 +43,15 @@ import { SalesContextModule } from './contexts/sales/sales.module';
       useFactory: () => ({
         pinoHttp: {
           level: process.env.LOG_LEVEL ?? 'info',
+          // Logs estructurados (JSON) por defecto; pretty solo si se pide explicitamente.
           transport:
-            process.env.NODE_ENV === 'development'
+            process.env.LOG_FORMAT === 'pretty'
               ? { target: 'pino-pretty', options: { singleLine: true } }
               : undefined,
+          // Los healthchecks de Docker (cada 15 s) no se registran: solo ruido.
+          autoLogging: {
+            ignore: (req) => (req.url ?? '').startsWith('/api/health'),
+          },
           redact: {
             paths: [
               'req.headers.authorization',
@@ -57,8 +62,12 @@ import { SalesContextModule } from './contexts/sales/sales.module';
             ],
             censor: '[REDACTED]',
           },
-          customProps: (req) => ({
-            correlationId: (req.headers['x-correlation-id'] as string) ?? undefined,
+          // correlationId real de la peticion (el que fija TenantContextMiddleware en la respuesta),
+          // aunque el cliente no envie X-Correlation-Id; asi cada log se puede cruzar con auditoria.
+          customProps: (req, res) => ({
+            correlationId:
+              (res.getHeader('x-correlation-id') as string | undefined) ??
+              (req.headers['x-correlation-id'] as string | undefined),
           }),
         },
       }),
