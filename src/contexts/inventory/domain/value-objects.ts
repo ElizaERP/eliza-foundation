@@ -1,5 +1,3 @@
-import { ulid } from 'ulid';
-
 import {
   DomainError,
   Guard,
@@ -7,6 +5,7 @@ import {
   Result,
   ValueObject,
   err,
+  newTimeOrderedUuid,
   ok,
 } from '@eliza/shared-kernel/domain';
 
@@ -14,61 +13,40 @@ import {
 // Identifiers (Branded types)
 // =====================================================================
 
-function ulidToUuid(s: string): string {
-  const ALPHABET = '0123456789ABCDEFGHJKMNPQRSTVWXYZ';
-  const bytes = new Uint8Array(16);
-  let bits = 0;
-  let value = 0;
-  let idx = 0;
-  for (const c of s.toUpperCase()) {
-    value = (value << 5) | ALPHABET.indexOf(c);
-    bits += 5;
-    if (bits >= 8) {
-      bits -= 8;
-      bytes[idx++] = (value >> bits) & 0xff;
-      if (idx === 16) break;
-    }
-  }
-  const hex = Array.from(bytes)
-    .map((b) => b.toString(16).padStart(2, '0'))
-    .join('');
-  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20, 32)}`;
-}
-
 export class LoteId extends Identifier<'Lote'> {
   private constructor(value: string) { super(value); }
   static fromString(v: string): LoteId { return new LoteId(v); }
-  static generate(): LoteId { return new LoteId(ulidToUuid(ulid())); }
+  static generate(): LoteId { return new LoteId(newTimeOrderedUuid()); }
 }
 
 export class ExistenciaId extends Identifier<'Existencia'> {
   private constructor(value: string) { super(value); }
   static fromString(v: string): ExistenciaId { return new ExistenciaId(v); }
-  static generate(): ExistenciaId { return new ExistenciaId(ulidToUuid(ulid())); }
+  static generate(): ExistenciaId { return new ExistenciaId(newTimeOrderedUuid()); }
 }
 
 export class ReservaId extends Identifier<'Reserva'> {
   private constructor(value: string) { super(value); }
   static fromString(v: string): ReservaId { return new ReservaId(v); }
-  static generate(): ReservaId { return new ReservaId(ulidToUuid(ulid())); }
+  static generate(): ReservaId { return new ReservaId(newTimeOrderedUuid()); }
 }
 
 export class MovimientoId extends Identifier<'Movimiento'> {
   private constructor(value: string) { super(value); }
   static fromString(v: string): MovimientoId { return new MovimientoId(v); }
-  static generate(): MovimientoId { return new MovimientoId(ulidToUuid(ulid())); }
+  static generate(): MovimientoId { return new MovimientoId(newTimeOrderedUuid()); }
 }
 
 export class WarehouseId extends Identifier<'Warehouse'> {
   private constructor(value: string) { super(value); }
   static fromString(v: string): WarehouseId { return new WarehouseId(v); }
-  static generate(): WarehouseId { return new WarehouseId(ulidToUuid(ulid())); }
+  static generate(): WarehouseId { return new WarehouseId(newTimeOrderedUuid()); }
 }
 
 export class LocationId extends Identifier<'Location'> {
   private constructor(value: string) { super(value); }
   static fromString(v: string): LocationId { return new LocationId(v); }
-  static generate(): LocationId { return new LocationId(ulidToUuid(ulid())); }
+  static generate(): LocationId { return new LocationId(newTimeOrderedUuid()); }
 }
 
 // =====================================================================

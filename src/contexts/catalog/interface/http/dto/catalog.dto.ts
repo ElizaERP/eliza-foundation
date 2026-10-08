@@ -47,11 +47,11 @@ export class CreateProductRequest {
   type!: ProductType;
 
   @ApiProperty({ format: 'uuid' })
-  @IsUUID('4')
+  @IsUUID()
   categoryId!: string;
 
   @ApiProperty({ format: 'uuid', description: 'UnitOfMeasure que usa esta unidad para venta' })
-  @IsUUID('4')
+  @IsUUID()
   unitOfSaleId!: string;
 
   @ApiPropertyOptional({ example: 12, description: 'Número de unidades por paquete' })
@@ -130,7 +130,7 @@ export class VersionedAction {
 // ---------- BOM ----------
 export class BOMComponentInput {
   @ApiProperty({ format: 'uuid' })
-  @IsUUID('4')
+  @IsUUID()
   componentProductId!: string;
 
   @ApiProperty({ example: 0.025, description: 'Cantidad por unidad del producto' })
@@ -138,7 +138,7 @@ export class BOMComponentInput {
   quantity!: number;
 
   @ApiProperty({ format: 'uuid' })
-  @IsUUID('4')
+  @IsUUID()
   uomId!: string;
 
   @ApiPropertyOptional({ example: 0 })
@@ -176,7 +176,7 @@ export class ListProductsQuery {
   type?: ProductType[];
 
   @ApiPropertyOptional({ format: 'uuid' })
-  @IsOptional() @IsUUID('4')
+  @IsOptional() @IsUUID()
   categoryId?: string;
 
   @ApiPropertyOptional({ example: '/congelados/arepas' })
@@ -227,7 +227,7 @@ export class CreateCategoryRequest {
   description?: string;
 
   @ApiPropertyOptional({ format: 'uuid' })
-  @IsOptional() @IsUUID('4')
+  @IsOptional() @IsUUID()
   parentId?: string;
 }
 

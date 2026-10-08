@@ -51,11 +51,14 @@ export interface IdentityProviderPort {
   /** Habilita/deshabilita login en Keycloak (espejo de UserStatus). */
   setUserEnabled(keycloakSubject: string, enabled: boolean): Promise<void>;
 
-  /** Asigna un client role del cliente `eliza-api` al usuario. */
-  assignClientRole(keycloakSubject: string, role: string): Promise<void>;
+  /**
+   * Asigna un rol de ELIZA al usuario. Los roles de ELIZA son roles de REALM
+   * (llegan al JWT en `realm_access.roles`). Idempotente.
+   */
+  assignRole(keycloakSubject: string, role: string): Promise<void>;
 
-  /** Revoca un client role. */
-  revokeClientRole(keycloakSubject: string, role: string): Promise<void>;
+  /** Revoca un rol de ELIZA (rol de realm). No-op si el usuario no lo tiene. */
+  revokeRole(keycloakSubject: string, role: string): Promise<void>;
 
   /** Actualiza atributos custom del usuario (tenant_id, plant_id, warehouse_id). */
   updateUserAttributes(keycloakSubject: string, attributes: Record<string, string[]>): Promise<void>;

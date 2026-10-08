@@ -1,5 +1,3 @@
-import { ulid } from 'ulid';
-
 import {
   DomainError,
   Guard,
@@ -7,6 +5,7 @@ import {
   Result,
   ValueObject,
   err,
+  newTimeOrderedUuid,
   ok,
 } from '@eliza/shared-kernel/domain';
 
@@ -14,43 +13,22 @@ import {
 // Identifiers
 // =====================================================================
 
-function ulidToUuid(s: string): string {
-  const ALPHABET = '0123456789ABCDEFGHJKMNPQRSTVWXYZ';
-  const bytes = new Uint8Array(16);
-  let bits = 0;
-  let value = 0;
-  let idx = 0;
-  for (const c of s.toUpperCase()) {
-    value = (value << 5) | ALPHABET.indexOf(c);
-    bits += 5;
-    if (bits >= 8) {
-      bits -= 8;
-      bytes[idx++] = (value >> bits) & 0xff;
-      if (idx === 16) break;
-    }
-  }
-  const hex = Array.from(bytes)
-    .map((b) => b.toString(16).padStart(2, '0'))
-    .join('');
-  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20, 32)}`;
-}
-
 export class OrdenProduccionId extends Identifier<'OrdenProduccion'> {
   private constructor(value: string) { super(value); }
   static fromString(v: string): OrdenProduccionId { return new OrdenProduccionId(v); }
-  static generate(): OrdenProduccionId { return new OrdenProduccionId(ulidToUuid(ulid())); }
+  static generate(): OrdenProduccionId { return new OrdenProduccionId(newTimeOrderedUuid()); }
 }
 
 export class ConsumoMpId extends Identifier<'ConsumoMp'> {
   private constructor(value: string) { super(value); }
   static fromString(v: string): ConsumoMpId { return new ConsumoMpId(v); }
-  static generate(): ConsumoMpId { return new ConsumoMpId(ulidToUuid(ulid())); }
+  static generate(): ConsumoMpId { return new ConsumoMpId(newTimeOrderedUuid()); }
 }
 
 export class LoteProducidoId extends Identifier<'LoteProducido'> {
   private constructor(value: string) { super(value); }
   static fromString(v: string): LoteProducidoId { return new LoteProducidoId(v); }
-  static generate(): LoteProducidoId { return new LoteProducidoId(ulidToUuid(ulid())); }
+  static generate(): LoteProducidoId { return new LoteProducidoId(newTimeOrderedUuid()); }
 }
 
 // =====================================================================

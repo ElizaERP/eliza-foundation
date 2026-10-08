@@ -13,7 +13,7 @@ import {
 export class QueryAuditRequest {
   @ApiPropertyOptional({ format: 'uuid' })
   @IsOptional()
-  @IsUUID('4')
+  @IsUUID()
   userId?: string;
 
   @ApiPropertyOptional({ isArray: true, example: ['Create', 'Update'] })
@@ -30,7 +30,7 @@ export class QueryAuditRequest {
 
   @ApiPropertyOptional({ format: 'uuid' })
   @IsOptional()
-  @IsUUID('4')
+  @IsUUID()
   entityId?: string;
 
   @ApiPropertyOptional({ format: 'uuid' })
@@ -69,7 +69,7 @@ export class EntityHistoryParam {
   entityType!: string;
 
   @ApiProperty({ format: 'uuid' })
-  @IsUUID('4')
+  @IsUUID()
   entityId!: string;
 }
 

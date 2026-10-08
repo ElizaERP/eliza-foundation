@@ -230,7 +230,7 @@ export class GrantMembership implements UseCase<{
 
     for (const role of input.roles) {
       try {
-        await this.idp.assignClientRole(user.keycloakSubject.value, role);
+        await this.idp.assignRole(user.keycloakSubject.value, role);
       } catch (e) {
         this.logger.warn(`Failed to assign ${role} in Keycloak: ${(e as Error).message}`);
       }
@@ -329,7 +329,7 @@ export class AssignRole implements UseCase<{
     await this.users.save(user);
 
     try {
-      await this.idp.assignClientRole(user.keycloakSubject.value, input.role);
+      await this.idp.assignRole(user.keycloakSubject.value, input.role);
     } catch (e) {
       this.logger.warn(`Failed to assign ${input.role} in Keycloak: ${(e as Error).message}`);
     }
@@ -381,7 +381,7 @@ export class RevokeRole implements UseCase<{
     await this.users.save(user);
 
     try {
-      await this.idp.revokeClientRole(user.keycloakSubject.value, input.role);
+      await this.idp.revokeRole(user.keycloakSubject.value, input.role);
     } catch (e) {
       this.logger.warn(`Failed to revoke ${input.role} in Keycloak: ${(e as Error).message}`);
     }

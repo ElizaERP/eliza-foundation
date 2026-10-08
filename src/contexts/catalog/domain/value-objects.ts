@@ -1,5 +1,3 @@
-import { ulid } from 'ulid';
-
 import {
   DomainError,
   Guard,
@@ -7,33 +5,13 @@ import {
   Result,
   ValueObject,
   err,
+  newTimeOrderedUuid,
   ok,
 } from '@eliza/shared-kernel/domain';
 
 // =====================================================================
 // Identifiers
 // =====================================================================
-
-function ulidToUuid(s: string): string {
-  const ALPHABET = '0123456789ABCDEFGHJKMNPQRSTVWXYZ';
-  const bytes = new Uint8Array(16);
-  let bits = 0;
-  let value = 0;
-  let idx = 0;
-  for (const c of s.toUpperCase()) {
-    value = (value << 5) | ALPHABET.indexOf(c);
-    bits += 5;
-    if (bits >= 8) {
-      bits -= 8;
-      bytes[idx++] = (value >> bits) & 0xff;
-      if (idx === 16) break;
-    }
-  }
-  const hex = Array.from(bytes)
-    .map((b) => b.toString(16).padStart(2, '0'))
-    .join('');
-  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20, 32)}`;
-}
 
 export class ProductId extends Identifier<'Product'> {
   private constructor(value: string) {
@@ -43,7 +21,7 @@ export class ProductId extends Identifier<'Product'> {
     return new ProductId(v);
   }
   static generate(): ProductId {
-    return new ProductId(ulidToUuid(ulid()));
+    return new ProductId(newTimeOrderedUuid());
   }
 }
 
@@ -55,7 +33,7 @@ export class CategoryId extends Identifier<'Category'> {
     return new CategoryId(v);
   }
   static generate(): CategoryId {
-    return new CategoryId(ulidToUuid(ulid()));
+    return new CategoryId(newTimeOrderedUuid());
   }
 }
 
@@ -67,7 +45,7 @@ export class UnitOfMeasureId extends Identifier<'UnitOfMeasure'> {
     return new UnitOfMeasureId(v);
   }
   static generate(): UnitOfMeasureId {
-    return new UnitOfMeasureId(ulidToUuid(ulid()));
+    return new UnitOfMeasureId(newTimeOrderedUuid());
   }
 }
 
@@ -79,7 +57,7 @@ export class BOMComponentId extends Identifier<'BOMComponent'> {
     return new BOMComponentId(v);
   }
   static generate(): BOMComponentId {
-    return new BOMComponentId(ulidToUuid(ulid()));
+    return new BOMComponentId(newTimeOrderedUuid());
   }
 }
 

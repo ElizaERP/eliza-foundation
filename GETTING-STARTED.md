@@ -88,12 +88,11 @@ make db-migrate
 
 Si es tu primera vez, Prisma te pedirá nombre para la migración inicial. Acepta o pon `init`.
 
-> 💡 **Catalog (Sprint 5)**: las tablas de catalog necesitan policies RLS adicionales. Después de la primera migración aplica:
-> ```bash
-> DATABASE_URL_MIGRATION="postgresql://migration_user:migration@localhost:5432/eliza" \
->   make db-rls
-> ```
-> Esto activa Row Level Security sobre `catalog.categories`, `catalog.products` y `catalog.bom_components`.
+> 💡 **RLS**: las políticas de Row Level Security de catalog, inventory, manufacturing y sales se aplican automáticamente con las migraciones (`prisma/migrations/20261006000000_enable_rls_policies`). Ya no hay que correr scripts SQL a mano.
+>
+> Para verificar el aislamiento entre tenants: `make db-rls-check`.
+>
+> ⚠️ La app debe conectarse con `app_user` (ver `.env.example`). Si `DATABASE_URL` usa `postgres`, la RLS **no se aplica**: un superusuario se la salta.
 
 ### Paso 4.5 — Cargar datos de prueba
 

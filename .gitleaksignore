@@ -1,0 +1,13 @@
+# Hallazgos de gitleaks revisados en la Fase 16 (2026-10-08): falsos positivos.
+# Ninguno es un secreto real. Formato: commit:archivo:regla:linea
+
+# terraform/main.tf:268 -> password_type = "PLAIN_TEXT" es el TIPO de contrasena del
+# recurso de PostgreSQL de OCI; la contrasena real viene de var.postgres_admin_password.
+e7c7d89d2cbd6f97ee89723ebf5a2d8b81a3adf7:terraform/main.tf:hashicorp-tf-password:268
+
+# TESTING-SPRINT2.md:68 -> token de ejemplo de 39 caracteres para ilustrar un 401
+# ("token expirado o firma alterada"); no es un token emitido por Keycloak.
+fa58b03ab701cc52678868dc47712e75c1fc858a:TESTING-SPRINT2.md:curl-auth-header:68
+
+# TESTING.md:133 -> marcador truncado "eyJ..." de 23 caracteres; no es un token.
+fa58b03ab701cc52678868dc47712e75c1fc858a:TESTING.md:generic-api-key:133

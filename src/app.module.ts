@@ -2,6 +2,7 @@ import { MiddlewareConsumer, Module, NestModule, RequestMethod } from '@nestjs/c
 import { ConfigModule } from '@nestjs/config';
 import { ThrottlerModule } from '@nestjs/throttler';
 import { LoggerModule } from 'nestjs-pino';
+import { ClsMiddleware } from 'nestjs-cls';
 
 import { envValidationSchema } from './config/env.validation';
 import { AuditContextModule } from './contexts/audit/audit.module';
@@ -42,10 +43,15 @@ import { SalesContextModule } from './contexts/sales/sales.module';
       useFactory: () => ({
         pinoHttp: {
           level: process.env.LOG_LEVEL ?? 'info',
+          // Logs estructurados (JSON) por defecto; pretty solo si se pide explicitamente.
           transport:
-            process.env.NODE_ENV === 'development'
+            process.env.LOG_FORMAT === 'pretty'
               ? { target: 'pino-pretty', options: { singleLine: true } }
               : undefined,
+          // Los healthchecks de Docker (cada 15 s) no se registran: solo ruido.
+          autoLogging: {
+            ignore: (req) => (req.url ?? '').startsWith('/api/health'),
+          },
           redact: {
             paths: [
               'req.headers.authorization',
@@ -56,8 +62,12 @@ import { SalesContextModule } from './contexts/sales/sales.module';
             ],
             censor: '[REDACTED]',
           },
-          customProps: (req) => ({
-            correlationId: (req.headers['x-correlation-id'] as string) ?? undefined,
+          // correlationId real de la peticion (el que fija TenantContextMiddleware en la respuesta),
+          // aunque el cliente no envie X-Correlation-Id; asi cada log se puede cruzar con auditoria.
+          customProps: (req, res) => ({
+            correlationId:
+              (res.getHeader('x-correlation-id') as string | undefined) ??
+              (req.headers['x-correlation-id'] as string | undefined),
           }),
         },
       }),
@@ -93,6 +103,14 @@ import { SalesContextModule } from './contexts/sales/sales.module';
 })
 export class AppModule implements NestModule {
   configure(consumer: MiddlewareConsumer): void {
+    // 1. ClsMiddleware PRIMERO: crea el contexto CLS de cada request.
+    //    Se monta aquí (no con `mount: true`) porque Nest registra el
+    //    middleware de AppModule antes que el de módulos importados; con
+    //    `mount: true` el TenantContextMiddleware corría sin contexto CLS y
+    //    toda ruta no pública respondía 500 ("No CLS context available").
+    consumer.apply(ClsMiddleware).forRoutes('*');
+
+    // 2. TenantContextMiddleware, ya con contexto CLS disponible.
     consumer
       .apply(TenantContextMiddleware)
       .exclude(
