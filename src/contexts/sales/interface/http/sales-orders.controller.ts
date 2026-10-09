@@ -38,15 +38,20 @@ import {
   ListSalesOrdersQueryDto,
 } from '@eliza/contexts/sales/interface/http/dto/sales.dto';
 
+// Sales.Salesperson es el rol real del vendedor (role-catalog.ts); Sales.Operator y
+// Sales.Reader no existen todavia en el catalogo de roles y se conservan por compatibilidad.
 const READER_ROLES = [
   'Platform.Admin', 'Tenant.Admin',
-  'Sales.Manager', 'Sales.Operator', 'Sales.Reader',
+  'Sales.Manager', 'Sales.Salesperson', 'Sales.Operator', 'Sales.Reader',
   'Inventory.Manager', 'Billing.Manager', 'Logistics.Manager',
 ];
 const WRITER_ROLES = [
   'Platform.Admin', 'Tenant.Admin',
   'Sales.Manager', 'Sales.Operator',
 ];
+// El vendedor arma el pedido en Borrador (crear, agregar y quitar lineas); confirmar,
+// reservar, despachar, cancelar y cerrar siguen siendo de WRITER_ROLES / Sales.Manager.
+const ORDER_AUTHOR_ROLES = [...WRITER_ROLES, 'Sales.Salesperson'];
 
 function unwrap<T>(r: Result<T, ApplicationError>): T {
   if (r.isOk) return r.value;
@@ -74,7 +79,7 @@ export class SalesOrdersController {
   ) {}
 
   @Post()
-  @RequireRoles(...WRITER_ROLES)
+  @RequireRoles(...ORDER_AUTHOR_ROLES)
   @ApiOperation({ summary: 'Create a sales order in Borrador state' })
   @ApiResponse({ status: 201, description: 'Order created' })
   async create(@Body() dto: CreateSalesOrderDto): Promise<OrdenVentaView> {
@@ -99,7 +104,7 @@ export class SalesOrdersController {
   }
 
   @Post(':id/lines')
-  @RequireRoles(...WRITER_ROLES)
+  @RequireRoles(...ORDER_AUTHOR_ROLES)
   @ApiOperation({ summary: 'Add a product line to the order (only in Borrador)' })
   @ApiResponse({ status: 201, description: 'Line added' })
   async addOrderLine(
@@ -111,7 +116,7 @@ export class SalesOrdersController {
 
   @Delete(':id/lines/:lineaId')
   @HttpCode(HttpStatus.OK)
-  @RequireRoles(...WRITER_ROLES)
+  @RequireRoles(...ORDER_AUTHOR_ROLES)
   @ApiOperation({ summary: 'Remove a line from the order (only in Borrador)' })
   async removeOrderLine(
     @Param('id', ParseUUIDPipe) id: string,

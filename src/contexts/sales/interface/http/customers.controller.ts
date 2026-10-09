@@ -33,9 +33,11 @@ import {
   UpdateCustomerDto,
 } from '@eliza/contexts/sales/interface/http/dto/sales.dto';
 
+// Sales.Salesperson (rol real del vendedor) necesita ver sus clientes para armar pedidos;
+// Sales.Operator y Sales.Reader no existen todavia en role-catalog.ts.
 const READER_ROLES = [
   'Platform.Admin', 'Tenant.Admin',
-  'Sales.Manager', 'Sales.Operator', 'Sales.Reader',
+  'Sales.Manager', 'Sales.Salesperson', 'Sales.Operator', 'Sales.Reader',
   'Billing.Manager', 'Logistics.Manager',
 ];
 const WRITER_ROLES = [
