@@ -166,9 +166,12 @@ export class RenameProduct
   async execute(input: { productId: string; newName: string; expectedVersion?: number }) {
     const product = await this.products.findById(input.productId);
     if (!product) return err(applicationError('product.not_found', `Product not found`, 'not_found'));
+    const antes = product.version;
     const r = product.rename(input.newName, this.clock.now());
     if (r.isErr) return err(applicationError(r.error.code, r.error.message, 'domain'));
-    await this.products.save(product, input.expectedVersion);
+    // Mismo nombre: el dominio no cambia nada ni sube la versión; no hay que guardar
+    // (guardar exigiría version - 1 y fallaría con ProductVersionMismatchError → 500).
+    if (product.version !== antes) await this.products.save(product, input.expectedVersion);
     return ok<ProductView, ApplicationError>(toProductView(product));
   }
 }
@@ -188,9 +191,11 @@ export class SetProductPrice
   async execute(input: { productId: string; salePrice: number | null; expectedVersion?: number }) {
     const product = await this.products.findById(input.productId);
     if (!product) return err(applicationError('product.not_found', `Product not found`, 'not_found'));
+    const antes = product.version;
     const r = product.setSalePrice(input.salePrice, this.clock.now());
     if (r.isErr) return err(applicationError(r.error.code, r.error.message, 'domain'));
-    await this.products.save(product, input.expectedVersion);
+    // Mismo precio: operación idempotente, no se guarda (ver RenameProduct).
+    if (product.version !== antes) await this.products.save(product, input.expectedVersion);
     return ok<ProductView, ApplicationError>(toProductView(product));
   }
 }
