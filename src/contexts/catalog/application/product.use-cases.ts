@@ -26,6 +26,28 @@ import {
 } from '@eliza/contexts/catalog/domain';
 import { ProductView, toProductView } from '@eliza/contexts/catalog/application/dto/catalog.views';
 
+/**
+ * Guarda el producto traduciendo el conflicto de versión (otro usuario lo cambió
+ * entre que se abrió y se guardó, o expectedVersion viejo) a un error 412 con
+ * mensaje claro, en vez de un 500. Se compara por nombre para no importar la
+ * clase de infraestructura en la capa de aplicación.
+ */
+async function guardar(
+  products: ProductRepository, product: Product, expectedVersion?: number,
+): Promise<Result<void, ApplicationError>> {
+  try {
+    await products.save(product, expectedVersion);
+    return ok(undefined);
+  } catch (e) {
+    if (e instanceof Error && e.name === 'ProductVersionMismatchError') {
+      return err(applicationError('product.version_conflict',
+        'Alguien más modificó este producto mientras lo editabas. Vuelve a abrirlo e inténtalo de nuevo.',
+        'concurrency'));
+    }
+    throw e;
+  }
+}
+
 // =====================================================================
 // CreateProduct
 // =====================================================================
@@ -71,30 +93,27 @@ export class CreateProduct implements UseCase<CreateProductInput, ProductView> {
     const existingCode = await this.products.findByCode(input.code);
     if (existingCode) {
       return err(applicationError('product.code_already_exists',
-        `Product code '${input.code}' already exists`, 'conflict'));
+        `Ya existe un producto con el código ${input.code}.`, 'conflict'));
     }
     const existingSku = await this.products.findBySku(input.sku);
     if (existingSku) {
       return err(applicationError('product.sku_already_exists',
-        `Product SKU '${input.sku}' already exists`, 'conflict'));
+        `Ya existe un producto con el SKU ${input.sku}.`, 'conflict'));
     }
 
     // Verificar categoría existe + activa
     const category = await this.categories.findById(input.categoryId);
     if (!category) {
-      return err(applicationError('category.not_found',
-        `Category '${input.categoryId}' not found`, 'not_found'));
+      return err(applicationError('category.not_found', 'La categoría no existe.', 'not_found'));
     }
     if (!category.isActive) {
-      return err(applicationError('category.inactive',
-        'Cannot create product in an inactive category', 'validation'));
+      return err(applicationError('category.inactive', 'La categoría está inactiva.', 'validation'));
     }
 
     // Verificar UoM existe
     const uom = await this.uoms.findById(input.unitOfSaleId);
     if (!uom) {
-      return err(applicationError('uom.not_found',
-        `Unit of measure '${input.unitOfSaleId}' not found`, 'not_found'));
+      return err(applicationError('uom.not_found', 'La unidad de medida no existe.', 'not_found'));
     }
 
     const productR = Product.create({ ...input, tenantId, now: this.clock.now() });
@@ -125,7 +144,8 @@ export class ActivateProduct implements UseCase<{ productId: string; expectedVer
     }
     const r = product.activate(this.clock.now());
     if (r.isErr) return err(applicationError(r.error.code, r.error.message, 'domain'));
-    await this.products.save(product, input.expectedVersion);
+    const g = await guardar(this.products, product, input.expectedVersion);
+    if (g.isErr) return err(g.error);
     return ok<ProductView, ApplicationError>(toProductView(product));
   }
 }
@@ -146,7 +166,8 @@ export class DiscontinueProduct
     }
     const r = product.discontinue(input.reason, this.clock.now());
     if (r.isErr) return err(applicationError(r.error.code, r.error.message, 'domain'));
-    await this.products.save(product, input.expectedVersion);
+    const g = await guardar(this.products, product, input.expectedVersion);
+    if (g.isErr) return err(g.error);
     return ok<ProductView, ApplicationError>(toProductView(product));
   }
 }
@@ -171,7 +192,10 @@ export class RenameProduct
     if (r.isErr) return err(applicationError(r.error.code, r.error.message, 'domain'));
     // Mismo nombre: el dominio no cambia nada ni sube la versión; no hay que guardar
     // (guardar exigiría version - 1 y fallaría con ProductVersionMismatchError → 500).
-    if (product.version !== antes) await this.products.save(product, input.expectedVersion);
+    if (product.version !== antes) {
+      const g = await guardar(this.products, product, input.expectedVersion);
+      if (g.isErr) return err(g.error);
+    }
     return ok<ProductView, ApplicationError>(toProductView(product));
   }
 }
@@ -195,8 +219,52 @@ export class SetProductPrice
     const r = product.setSalePrice(input.salePrice, this.clock.now());
     if (r.isErr) return err(applicationError(r.error.code, r.error.message, 'domain'));
     // Mismo precio: operación idempotente, no se guarda (ver RenameProduct).
-    if (product.version !== antes) await this.products.save(product, input.expectedVersion);
+    if (product.version !== antes) {
+      const g = await guardar(this.products, product, input.expectedVersion);
+      if (g.isErr) return err(g.error);
+    }
     return ok<ProductView, ApplicationError>(toProductView(product));
+  }
+}
+
+// =====================================================================
+// UpdateProductDetails (Sprint 14)
+// =====================================================================
+export interface UpdateProductDetailsInput {
+  productId: string;
+  name?: string;
+  description?: string | null;
+  barcode?: string | null;
+  packSize?: number | null;
+  netWeightGrams?: number | null;
+  grossWeightGrams?: number | null;
+  expiryDays?: number | null;
+  storageTempMinC?: number | null;
+  storageTempMaxC?: number | null;
+  taxRate?: number | null;
+  expectedVersion?: number;
+}
+
+/** Editar nombre y datos del producto en una sola operación (una sola versión). */
+@Injectable()
+export class UpdateProductDetails implements UseCase<UpdateProductDetailsInput, ProductView> {
+  constructor(
+    @Inject(PRODUCT_REPOSITORY) private readonly products: ProductRepository,
+    @Inject(CLOCK_PORT) private readonly clock: ClockPort,
+  ) {}
+
+  async execute(input: UpdateProductDetailsInput): Promise<Result<ProductView, ApplicationError>> {
+    const product = await this.products.findById(input.productId);
+    if (!product) return err(applicationError('product.not_found', 'El producto no existe.', 'not_found'));
+    const { productId: _id, expectedVersion, ...cambios } = input;
+    const antes = product.version;
+    const r = product.updateDetails({ ...cambios, now: this.clock.now() });
+    if (r.isErr) return err(applicationError(r.error.code, r.error.message, 'validation', r.error.details));
+    if (product.version !== antes) {
+      const g = await guardar(this.products, product, expectedVersion);
+      if (g.isErr) return err(g.error);
+    }
+    return ok(toProductView(product));
   }
 }
 
@@ -241,6 +309,22 @@ export class SetBOM implements UseCase<SetBOMInput, ProductView> {
         `Component(s) not found: ${missing.join(', ')}`, 'not_found'));
     }
 
+    // Un componente descontinuado no se puede comprar ni producir (Sprint 14)
+    const descontinuados = found.filter((p) => p.status === ProductStatus.Discontinued);
+    if (descontinuados.length > 0) {
+      return err(applicationError('product.bom_discontinued_component',
+        `No se pueden usar productos descontinuados en la receta: ${descontinuados.map((p) => p.name).join(', ')}`,
+        'validation'));
+    }
+
+    // Ciclos: si algún componente (o sus componentes, a cualquier nivel) usa
+    // este producto, producirlo exigiría producirse a sí mismo (Sprint 14).
+    const ciclo = await this.buscarCiclo(product.id.value, found);
+    if (ciclo) {
+      return err(applicationError('product.bom_cycle',
+        `${ciclo} ya usa este producto en su receta: no puede ser componente suyo.`, 'validation'));
+    }
+
     // Validar que ningún componente es Service (no inventariable)
     const serviceComponents = found.filter((p) => p.type === ProductType.Service);
     if (serviceComponents.length > 0) {
@@ -262,9 +346,30 @@ export class SetBOM implements UseCase<SetBOMInput, ProductView> {
     const r = product.setBOM({ components: input.components, now: this.clock.now() });
     if (r.isErr) return err(applicationError(r.error.code, r.error.message, 'domain'));
 
-    await this.products.save(product, input.expectedVersion);
+    const g = await guardar(this.products, product, input.expectedVersion);
+    if (g.isErr) return err(g.error);
     this.logger.log(`BOM updated for ${product.code}: ${input.components.length} components`);
     return ok(toProductView(product));
+  }
+
+  /** Recorre las recetas de los componentes; devuelve el nombre del componente directo que lleva al ciclo. */
+  private async buscarCiclo(productId: string, directos: Product[]): Promise<string | null> {
+    for (const directo of directos) {
+      const vistos = new Set<string>();
+      let frontera: Product[] = [directo];
+      for (let nivel = 0; nivel < 20 && frontera.length > 0; nivel++) {
+        const ids: string[] = [];
+        for (const p of frontera) {
+          for (const c of p.components) {
+            const cid = c.componentProductId.value;
+            if (cid === productId) return directo.name;
+            if (!vistos.has(cid)) { vistos.add(cid); ids.push(cid); }
+          }
+        }
+        frontera = ids.length > 0 ? await this.products.findByIds(ids) : [];
+      }
+    }
+    return null;
   }
 }
 

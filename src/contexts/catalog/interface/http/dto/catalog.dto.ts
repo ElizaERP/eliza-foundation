@@ -133,6 +133,56 @@ export class RenameProductRequest {
   expectedVersion?: number;
 }
 
+/**
+ * Editar producto (Sprint 14). Campo omitido = no cambia; null = se borra.
+ * Sin @Transform a propósito: convertiría null en 0.
+ */
+export class UpdateProductDetailsRequest {
+  @ApiPropertyOptional()
+  @IsOptional() @IsString() @Length(1, 200)
+  name?: string;
+
+  @ApiPropertyOptional({ nullable: true })
+  @IsOptional() @IsString() @Length(0, 2000)
+  description?: string | null;
+
+  @ApiPropertyOptional({ nullable: true, example: '7702345001234' })
+  @IsOptional() @IsString() @Length(0, 14)
+  barcode?: string | null;
+
+  @ApiPropertyOptional({ nullable: true, example: 12 })
+  @IsOptional() @IsInt() @Min(1)
+  packSize?: number | null;
+
+  @ApiPropertyOptional({ nullable: true, example: 360 })
+  @IsOptional() @IsNumber() @Min(0.001)
+  netWeightGrams?: number | null;
+
+  @ApiPropertyOptional({ nullable: true, example: 400 })
+  @IsOptional() @IsNumber() @Min(0.001)
+  grossWeightGrams?: number | null;
+
+  @ApiPropertyOptional({ nullable: true, example: 90 })
+  @IsOptional() @IsInt() @Min(1)
+  expiryDays?: number | null;
+
+  @ApiPropertyOptional({ nullable: true, example: -18 })
+  @IsOptional() @IsNumber()
+  storageTempMinC?: number | null;
+
+  @ApiPropertyOptional({ nullable: true, example: -15 })
+  @IsOptional() @IsNumber()
+  storageTempMaxC?: number | null;
+
+  @ApiPropertyOptional({ nullable: true, example: 19 })
+  @IsOptional() @IsNumber() @Min(0) @Max(100)
+  taxRate?: number | null;
+
+  @ApiPropertyOptional({ description: 'Versión que tenía el producto al abrirlo (concurrencia optimista)' })
+  @IsOptional() @IsInt() @Min(1)
+  expectedVersion?: number;
+}
+
 export class VersionedAction {
   @ApiPropertyOptional()
   @IsOptional() @IsInt() @Min(1)
