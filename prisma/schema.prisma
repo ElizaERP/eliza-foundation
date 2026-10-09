@@ -369,6 +369,7 @@ model Product {
   // Metadata
   imageUrl     String?  @map("image_url") @db.VarChar(500)
   taxRate      Decimal? @map("tax_rate") @db.Decimal(5, 2)   // ej. 19.00 (IVA Colombia)
+  salePrice    Decimal? @map("sale_price") @db.Decimal(18, 2) // precio de lista en COP, sin IVA (lo fija Tenant.Admin / Sales.Manager)
   isControlled Boolean  @default(false) @map("is_controlled") // requiere control especial (lote, cadena fría)
 
   version   Int      @default(1)

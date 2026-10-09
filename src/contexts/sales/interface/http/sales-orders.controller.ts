@@ -16,6 +16,7 @@ import {
 import { ApiBearerAuth, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 
 import { RequireRoles } from '@eliza/shared-kernel/infrastructure/auth/auth.decorators';
+import { CurrentUser } from '@eliza/contexts/iam/infrastructure/auth/auth.guards';
 import { ApplicationError } from '@eliza/shared-kernel/application/use-case';
 import { Result } from '@eliza/shared-kernel/domain';
 import {
@@ -52,6 +53,8 @@ const WRITER_ROLES = [
 // El vendedor arma el pedido en Borrador (crear, agregar y quitar lineas); confirmar,
 // reservar, despachar, cancelar y cerrar siguen siendo de WRITER_ROLES / Sales.Manager.
 const ORDER_AUTHOR_ROLES = [...WRITER_ROLES, 'Sales.Salesperson'];
+// Pueden indicar un precio distinto al de lista en una linea (p. ej. un descuento autorizado).
+const PRICE_SETTER_ROLES = ['Platform.Admin', 'Tenant.Admin', 'Sales.Manager'];
 
 function unwrap<T>(r: Result<T, ApplicationError>): T {
   if (r.isOk) return r.value;
@@ -110,8 +113,10 @@ export class SalesOrdersController {
   async addOrderLine(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: AddOrderLineDto,
+    @CurrentUser('roles') roles: string[] = [],
   ): Promise<OrdenVentaView> {
-    return unwrap(await this.addLine.execute({ ordenId: id, ...dto }));
+    const puedeFijarPrecio = roles.some((r) => PRICE_SETTER_ROLES.includes(r));
+    return unwrap(await this.addLine.execute({ ordenId: id, ...dto, puedeFijarPrecio }));
   }
 
   @Delete(':id/lines/:lineaId')

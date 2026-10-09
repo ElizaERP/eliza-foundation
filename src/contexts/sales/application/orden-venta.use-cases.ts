@@ -139,7 +139,10 @@ export interface AddOrderLineInput {
   ordenId: string;
   productId: string;
   cantidad: number;
-  precioUnitario: number;
+  /** Opcional: sin él se usa el precio de lista del producto. */
+  precioUnitario?: number;
+  /** true si quien agrega la línea puede fijar el precio (gerente/admin); el vendedor no. */
+  puedeFijarPrecio?: boolean;
   notas?: string;
 }
 
@@ -171,12 +174,24 @@ export class AddOrderLineUseCase implements UseCase<AddOrderLineInput, OrdenVent
       ? Number(product.taxRate)
       : 0;
 
+    // Precio: el de lista del catálogo. Solo quien puede fijar precio (gerente/admin) puede
+    // enviar otro; un vendedor que lo intente recibe un error en lugar de un precio ignorado.
+    if (input.precioUnitario !== undefined && !input.puedeFijarPrecio) {
+      return err(applicationError('sales.price_not_allowed',
+        'El precio lo define la lista de precios del catálogo; tu rol no puede fijarlo', 'validation'));
+    }
+    const precioUnitario = input.precioUnitario ?? product.salePrice;
+    if (precioUnitario === null || precioUnitario === undefined) {
+      return err(applicationError('sales.product_without_price',
+        `El producto ${product.code} no tiene precio de lista; pídeselo al gerente de ventas`, 'validation'));
+    }
+
     const lineaR = orden.addLine({
       productId: product.id.value,
       productCode: product.code,
       productName: product.name,
       cantidad: input.cantidad,
-      precioUnitario: input.precioUnitario,
+      precioUnitario,
       tasaIva,
       notas: input.notas,
       now,

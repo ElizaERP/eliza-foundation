@@ -13,6 +13,7 @@ import {
   Length,
   Max,
   Min,
+  ValidateIf,
   ValidateNested,
 } from 'class-validator';
 
@@ -102,6 +103,18 @@ export class DiscontinueProductRequest {
   @ApiProperty({ example: 'Producto descontinuado por proveedor' })
   @IsString() @Length(3, 500)
   reason!: string;
+
+  @ApiPropertyOptional()
+  @IsOptional() @IsInt() @Min(1)
+  @Transform(({ value }) => (value !== undefined ? Number(value) : undefined))
+  expectedVersion?: number;
+}
+
+export class SetProductPriceRequest {
+  @ApiProperty({ nullable: true, example: 4500, description: 'Precio de lista en COP, sin IVA. null lo quita.' })
+  @ValidateIf((_o, v) => v !== null)
+  @IsNumber() @Min(0.01)
+  salePrice!: number | null;
 
   @ApiPropertyOptional()
   @IsOptional() @IsInt() @Min(1)
@@ -280,6 +293,7 @@ export class ProductResponse {
   @ApiProperty({ nullable: true }) storageTempMinC!: number | null;
   @ApiProperty({ nullable: true }) storageTempMaxC!: number | null;
   @ApiProperty({ nullable: true }) taxRate!: number | null;
+  @ApiProperty({ nullable: true, description: 'Precio de lista en COP, sin IVA' }) salePrice!: number | null;
   @ApiProperty({ nullable: true }) imageUrl!: string | null;
   @ApiProperty() isControlled!: boolean;
   @ApiProperty({ type: [BOMComponentResponse] }) components!: BOMComponentResponse[];
