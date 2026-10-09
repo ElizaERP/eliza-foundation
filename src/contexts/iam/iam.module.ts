@@ -12,11 +12,14 @@ import {
   GetUserById,
   GrantMembership,
   ListUsersInTenant,
+  Login,
+  Logout,
+  RefreshSession,
   RevokeMembership,
   RevokeRole,
   SuspendUser,
 } from './application';
-import { IDENTITY_PROVIDER_PORT, USER_REPOSITORY } from './domain';
+import { IDENTITY_PROVIDER_PORT, SESSION_PROVIDER_PORT, USER_REPOSITORY } from './domain';
 import {
   JwtAuthGuard,
   RolesGuard,
@@ -26,7 +29,9 @@ import { JwtStrategy } from './infrastructure/auth/jwt.strategy';
 import { KeycloakAdminClient } from './infrastructure/keycloak/keycloak-admin.client';
 import { KeycloakConfig } from './infrastructure/keycloak/keycloak.config';
 import { KeycloakIdentityProvider } from './infrastructure/keycloak/keycloak-identity-provider';
+import { KeycloakSessionProvider } from './infrastructure/keycloak/keycloak-session.provider';
 import { PrismaUserRepository } from './infrastructure/persistence/prisma-user.repository';
+import { AuthController } from './interface/http/auth.controller';
 import { MeController } from './interface/http/me.controller';
 import {
   PlatformUsersController,
@@ -39,6 +44,9 @@ const portBindings: Provider[] = [
 
   KeycloakIdentityProvider,
   { provide: IDENTITY_PROVIDER_PORT, useExisting: KeycloakIdentityProvider },
+
+  KeycloakSessionProvider,
+  { provide: SESSION_PROVIDER_PORT, useExisting: KeycloakSessionProvider },
 ];
 
 const keycloakInfrastructure: Provider[] = [
@@ -61,6 +69,9 @@ const useCases: Provider[] = [
   GetUserByEmail,
   GetMe,
   ListUsersInTenant,
+  Login,
+  RefreshSession,
+  Logout,
 ];
 
 const globalGuards: Provider[] = [
@@ -75,6 +86,7 @@ const globalGuards: Provider[] = [
     PassportModule.register({ defaultStrategy: 'eliza-jwt' }),
   ],
   controllers: [
+    AuthController,
     MeController,
     PlatformUsersController,
     TenantUsersController,
