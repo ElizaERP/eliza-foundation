@@ -3,6 +3,7 @@ import { Type } from 'class-transformer';
 import {
   IsDate,
   IsEnum,
+  IsIn,
   IsInt,
   IsNumber,
   IsOptional,
@@ -127,13 +128,54 @@ export class ReleaseReservationDto {
 }
 
 export class AdjustStockDto {
-  @ApiProperty({ description: 'Positive to add, negative to subtract', example: -2 })
-  @IsNumber()
-  delta!: number;
+  @ApiPropertyOptional({ description: 'Positive to add, negative to subtract. Send delta OR cantidadContada.', example: -2 })
+  @IsOptional() @IsNumber()
+  delta?: number;
+
+  @ApiPropertyOptional({ description: 'Physical count at this location (available + reserved + blocked). The server computes the delta.', example: 48 })
+  @IsOptional() @IsNumber() @Min(0)
+  cantidadContada?: number;
 
   @ApiProperty({ example: 'Conteo cíclico Q2-2026' })
   @IsString() @Length(3, 500)
   motivo!: string;
+}
+
+/** Recibir mercancía (Sprint 13): crea el lote y lo ingresa en un solo paso. */
+export class RegisterReceiptDto {
+  @ApiProperty({ format: 'uuid' })
+  @IsUUID() productId!: string;
+
+  @ApiProperty({ example: 'HAR-2026-10-09-01' })
+  @IsString() @Matches(/^[A-Z0-9][A-Z0-9-]{2,49}$/)
+  codigoLote!: string;
+
+  @ApiProperty({ example: 250 })
+  @IsNumber() @Min(0.000001)
+  cantidad!: number;
+
+  @ApiProperty({ format: 'uuid' })
+  @IsUUID() locationId!: string;
+
+  @ApiProperty({ example: '2027-04-09' })
+  @Type(() => Date) @IsDate()
+  fechaVencimiento!: Date;
+
+  @ApiPropertyOptional({ description: 'Por defecto: ahora' })
+  @IsOptional() @Type(() => Date) @IsDate()
+  fechaProduccion?: Date;
+
+  @ApiProperty({ enum: [OrigenLote.Purchase, OrigenLote.Manual], example: OrigenLote.Purchase })
+  @IsIn([OrigenLote.Purchase, OrigenLote.Manual])
+  origenTipo!: OrigenLote.Purchase | OrigenLote.Manual;
+
+  @ApiProperty({ description: 'Factura/remisión del proveedor, o referencia de la entrada manual', example: 'FAC-10234' })
+  @IsString() @Length(1, 100)
+  documento!: string;
+
+  @ApiPropertyOptional()
+  @IsOptional() @IsString() @Length(0, 1000)
+  notas?: string;
 }
 
 export class TransferStockDto {

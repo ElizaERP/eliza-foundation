@@ -1,4 +1,4 @@
-import { BadRequestException, Controller, Get, Query } from '@nestjs/common';
+import { Controller, Get, Query } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 
 import { RequireRoles } from '@eliza/shared-kernel/infrastructure/auth/auth.decorators';
@@ -16,9 +16,14 @@ const READER_ROLES = [
   'Billing.Manager', 'Audit.Reader',
 ];
 
+/**
+ * Errores de aplicación: se lanzan tal cual y el filtro Problem Details los
+ * convierte (not_found 404, conflict 409, validation 400...) conservando el
+ * código y los detalles, que la app usa para mostrar el mensaje correcto.
+ */
 function unwrap<T>(r: Result<T, ApplicationError>): T {
   if (r.isOk) return r.value;
-  throw new BadRequestException({ code: r.error.code, message: r.error.message });
+  throw r.error;
 }
 
 @ApiTags('Inventory · Movements')

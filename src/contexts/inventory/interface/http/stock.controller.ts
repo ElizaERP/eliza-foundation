@@ -1,13 +1,10 @@
 import {
-  BadRequestException,
   Body,
-  ConflictException,
   Controller,
   Delete,
   Get,
   HttpCode,
   HttpStatus,
-  NotFoundException,
   Param,
   ParseUUIDPipe,
   Post,
@@ -23,6 +20,7 @@ import {
   ExistenciaView,
   GetStockBySkuUseCase,
   ReceiveInventoryUseCase,
+  RegisterReceiptUseCase,
   ReleaseReservationUseCase,
   ReserveStockUseCase,
   StockSummaryView,
@@ -32,6 +30,7 @@ import {
   AdjustStockDto,
   DispatchInventoryDto,
   ReceiveInventoryDto,
+  RegisterReceiptDto,
   ReleaseReservationDto,
   ReserveStockDto,
   TransferStockDto,
@@ -46,12 +45,14 @@ const WRITER_ROLES = [
   'Platform.Admin', 'Tenant.Admin', 'Inventory.Manager', 'Inventory.Operator',
 ];
 
+/**
+ * Errores de aplicación: se lanzan tal cual y el filtro Problem Details los
+ * convierte (not_found 404, conflict 409, validation 400...) conservando el
+ * código y los detalles, que la app usa para mostrar el mensaje correcto.
+ */
 function unwrap<T>(r: Result<T, ApplicationError>): T {
   if (r.isOk) return r.value;
-  const e = r.error;
-  if (e.category === 'not_found') throw new NotFoundException(e.message);
-  if (e.category === 'conflict') throw new ConflictException({ code: e.code, message: e.message, details: e.details });
-  throw new BadRequestException({ code: e.code, message: e.message, details: e.details });
+  throw r.error;
 }
 
 @ApiTags('Inventory · Stock')
@@ -66,6 +67,7 @@ export class StockController {
     private readonly transfer: TransferStockUseCase,
     private readonly dispatch: DispatchInventoryUseCase,
     private readonly getStock: GetStockBySkuUseCase,
+    private readonly registerReceipt: RegisterReceiptUseCase,
   ) {}
 
   @Post('receive')
@@ -74,6 +76,21 @@ export class StockController {
   @ApiOperation({ summary: 'Receive inventory into stock' })
   async doReceive(@Body() dto: ReceiveInventoryDto) {
     return unwrap(await this.receive.execute(dto));
+  }
+
+  /**
+   * Recibir mercancía (Sprint 13): crea el lote y lo ingresa en un paso.
+   * La pueden hacer los operarios de bodega (mismos roles que /receive): es su
+   * trabajo diario. Registrar un lote suelto (POST /lots) sigue siendo de gerente.
+   */
+  @Post('receipts')
+  @HttpCode(HttpStatus.CREATED)
+  @RequireRoles(...WRITER_ROLES)
+  @ApiOperation({ summary: 'Receive goods: create the lot and put it into stock in one step' })
+  @ApiResponse({ status: 201, description: 'Lot created and received' })
+  @ApiResponse({ status: 409, description: 'Lot code already exists for this product' })
+  async doRegisterReceipt(@Body() dto: RegisterReceiptDto) {
+    return unwrap(await this.registerReceipt.execute(dto));
   }
 
   @Post('reserve')
