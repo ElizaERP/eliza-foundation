@@ -62,17 +62,17 @@ export class RegisterLotUseCase implements UseCase<RegisterLotInput, LoteView> {
     const product = await this.productRepo.findById(input.productId);
     if (!product) {
       return err(applicationError('inventory.product_not_found',
-        `Product ${input.productId} not found`, 'not_found'));
+        'El producto no existe.', 'not_found'));
     }
     if (product.status === ProductStatus.Discontinued) {
       return err(applicationError('inventory.product_discontinued',
-        `Cannot register lot for discontinued product ${input.productId}`, 'validation'));
+        'El producto está descontinuado: no se le pueden registrar lotes.', 'validation'));
     }
 
     const existing = await this.loteRepo.findByCodigoLote(input.productId, input.codigoLote);
     if (existing) {
       return err(applicationError('inventory.lote_code_exists',
-        `Lote with code ${input.codigoLote} already exists for this product`, 'conflict'));
+        `Ya existe un lote ${input.codigoLote} para este producto. Usa otro código.`, 'conflict'));
     }
 
     const loteR = Lote.create({

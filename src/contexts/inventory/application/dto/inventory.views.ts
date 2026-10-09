@@ -122,19 +122,26 @@ export interface StockByLotView {
   codigoLote: string;
   fechaVencimiento: string;
   estado: EstadoLote;
+  /** Estado Disponible y sin vencer: la reserva FEFO puede tomar de este lote. */
+  reservable: boolean;
   cantidadDisponible: number;
   cantidadReservada: number;
   cantidadBloqueada: number;
   ubicaciones: Array<{
+    /** Para ajustar esta existencia (POST /inventory/stock/adjust/:existenciaId). */
+    existenciaId: string;
     locationId: string;
     cantidadDisponible: number;
     cantidadReservada: number;
+    cantidadBloqueada: number;
   }>;
 }
 
 export interface StockSummaryView {
   productId: string;
+  /** Solo lo reservable (lotes Disponibles sin vencer). */
   totalDisponible: number;
+  /** Bloqueado en existencias + disponible de lotes no reservables. */
   totalReservado: number;
   totalBloqueado: number;
   totalFisico: number;

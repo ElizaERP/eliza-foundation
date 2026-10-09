@@ -1,7 +1,5 @@
 import {
-  BadRequestException,
   Body,
-  ConflictException,
   Controller,
   Get,
   HttpCode,
@@ -42,12 +40,14 @@ const READER_ROLES = [
 ];
 const WRITER_ROLES = ['Platform.Admin', 'Tenant.Admin', 'Inventory.Manager'];
 
+/**
+ * Errores de aplicación: se lanzan tal cual y el filtro Problem Details los
+ * convierte (not_found 404, conflict 409, validation 400...) conservando el
+ * código y los detalles, que la app usa para mostrar el mensaje correcto.
+ */
 function unwrap<T>(r: Result<T, ApplicationError>): T {
   if (r.isOk) return r.value;
-  const e = r.error;
-  if (e.category === 'not_found') throw new NotFoundException(e.message);
-  if (e.category === 'conflict') throw new ConflictException({ code: e.code, message: e.message });
-  throw new BadRequestException({ code: e.code, message: e.message, details: e.details });
+  throw r.error;
 }
 
 @ApiTags('Inventory · Lots')
