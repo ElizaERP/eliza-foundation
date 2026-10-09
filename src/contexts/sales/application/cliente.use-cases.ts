@@ -57,6 +57,12 @@ export interface CreateCustomerInput {
   contactoTelefono?: string;
   contactoEmail?: string;
   notas?: string;
+  /**
+   * true si quien registra puede otorgar crédito (gerente de ventas / admin). Un vendedor
+   * registra clientes solo a Contado: dar crédito es una decisión del gerente.
+   * Por omisión true para no cambiar el comportamiento de los llamadores existentes.
+   */
+  puedeOtorgarCredito?: boolean;
 }
 
 @Injectable()
@@ -73,6 +79,12 @@ export class CreateCustomerUseCase implements UseCase<CreateCustomerInput, Clien
     const tenantId = this.ctx.tryGetTenantId();
     if (!tenantId) throw new Error('Tenant context required');
     const now = this.clock.now();
+
+    if (input.puedeOtorgarCredito === false
+      && input.condicionesPago !== undefined && input.condicionesPago !== CondicionesPago.Contado) {
+      return err(applicationError('sales.credit_not_allowed',
+        'Tu rol registra clientes a Contado; el crédito lo otorga el gerente de ventas', 'validation'));
+    }
 
     // Unicidad de código
     const existingCode = await this.repo.findByCodigo(input.codigo);

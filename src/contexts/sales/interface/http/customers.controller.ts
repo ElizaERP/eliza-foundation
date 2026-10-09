@@ -16,6 +16,7 @@ import {
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 
 import { RequireRoles } from '@eliza/shared-kernel/infrastructure/auth/auth.decorators';
+import { CurrentUser } from '@eliza/contexts/iam/infrastructure/auth/auth.guards';
 import { ApplicationError } from '@eliza/shared-kernel/application/use-case';
 import { Result } from '@eliza/shared-kernel/domain';
 import {
@@ -44,6 +45,10 @@ const WRITER_ROLES = [
   'Platform.Admin', 'Tenant.Admin',
   'Sales.Manager', 'Sales.Operator',
 ];
+// El vendedor registra clientes nuevos (siempre a Contado) para no frenar un pedido;
+// editar, suspender, activar y otorgar credito siguen siendo de WRITER_ROLES / Sales.Manager.
+const CUSTOMER_CREATOR_ROLES = [...WRITER_ROLES, 'Sales.Salesperson'];
+const CREDIT_GRANTER_ROLES = ['Platform.Admin', 'Tenant.Admin', 'Sales.Manager'];
 
 function unwrap<T>(r: Result<T, ApplicationError>): T {
   if (r.isOk) return r.value;
@@ -67,10 +72,14 @@ export class CustomersController {
   ) {}
 
   @Post()
-  @RequireRoles(...WRITER_ROLES)
-  @ApiOperation({ summary: 'Create a new customer' })
-  async create(@Body() dto: CreateCustomerDto): Promise<ClienteView> {
-    return unwrap(await this.createCustomer.execute(dto));
+  @RequireRoles(...CUSTOMER_CREATOR_ROLES)
+  @ApiOperation({ summary: 'Create a new customer (Sales.Salesperson: only Contado)' })
+  async create(
+    @Body() dto: CreateCustomerDto,
+    @CurrentUser('roles') roles: string[] = [],
+  ): Promise<ClienteView> {
+    const puedeOtorgarCredito = roles.some((r) => CREDIT_GRANTER_ROLES.includes(r));
+    return unwrap(await this.createCustomer.execute({ ...dto, puedeOtorgarCredito }));
   }
 
   @Get()
