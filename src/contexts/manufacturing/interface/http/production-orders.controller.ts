@@ -1,7 +1,5 @@
 import {
-  BadRequestException,
   Body,
-  ConflictException,
   Controller,
   Get,
   HttpCode,
@@ -47,12 +45,10 @@ const WRITER_ROLES = [
   'Manufacturing.Manager', 'Manufacturing.Operator',
 ];
 
+/** Lanza el ApplicationError tal cual: el filtro global conserva el código (ver Ventas). */
 function unwrap<T>(r: Result<T, ApplicationError>): T {
   if (r.isOk) return r.value;
-  const e = r.error;
-  if (e.category === 'not_found') throw new NotFoundException(e.message);
-  if (e.category === 'conflict') throw new ConflictException({ code: e.code, message: e.message });
-  throw new BadRequestException({ code: e.code, message: e.message, details: e.details });
+  throw r.error;
 }
 
 @ApiTags('Manufacturing · Production Orders')
@@ -140,7 +136,7 @@ export class ProductionOrdersController {
   @Post(':id/complete')
   @HttpCode(HttpStatus.OK)
   @RequireRoles(...WRITER_ROLES)
-  @ApiOperation({ summary: 'Complete production order (requires at least one produced lot)' })
+  @ApiOperation({ summary: 'Complete production order: consumes reserved raw materials (backflush) and closes; requires at least one produced lot' })
   async complete(@Param('id', ParseUUIDPipe) id: string): Promise<OrdenProduccionView> {
     return unwrap(await this.completeOrder.execute({ ordenId: id }));
   }

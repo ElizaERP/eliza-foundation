@@ -41,6 +41,7 @@ import {
 
 // --- Inventory application (cross-BC) ---
 import {
+  DispatchInventoryUseCase,
   ReceiveInventoryUseCase,
   RegisterLotUseCase,
   ReleaseReservationUseCase,
@@ -173,10 +174,17 @@ export class ReserveMaterialsUseCase
   constructor(
     @Inject(ORDEN_PRODUCCION_REPOSITORY) private readonly repo: OrdenProduccionRepository,
     private readonly reserveStock: ReserveStockUseCase,
+    private readonly releaseReservation: ReleaseReservationUseCase,
     @Inject(CLOCK_PORT) private readonly clock: ClockPort,
     @Inject(TENANT_CONTEXT_PORT) private readonly ctx: TenantContextPort,
   ) {}
 
+  /**
+   * Reserva todas las materias primas o ninguna (igual que los pedidos de venta):
+   * si un componente no alcanza, se liberan las reservas ya hechas y la orden sigue
+   * Planificada sin materiales. Antes de empezar se liberan reservas huérfanas de
+   * un intento anterior interrumpido, para no reservar dos veces.
+   */
   async execute(input: ReserveMaterialsInput): Promise<Result<ReserveMaterialsOutput, ApplicationError>> {
     this.ctx.tryGetTenantId();
     const now = this.clock.now();
@@ -186,32 +194,54 @@ export class ReserveMaterialsUseCase
       return err(applicationError('manufacturing.order_not_found',
         `Production order ${input.ordenId} not found`, 'not_found'));
     }
-    if (orden.estado !== EstadoOrdenProduccion.Planificada) {
+    if (orden.estado !== EstadoOrdenProduccion.Planificada || orden.materialesReservados) {
       return err(applicationError('manufacturing.invalid_state',
-        `Cannot reserve materials in state ${orden.estado}`, 'validation'));
+        orden.materialesReservados
+          ? 'Los materiales de esta orden ya están reservados.'
+          : `Solo se reservan materiales de una orden Planificada (estado actual: ${orden.estado}).`,
+        'validation'));
+    }
+
+    // Referencia única por (orden, componente): cada componente tiene su propia reserva.
+    const ref = (productId: string) => `${orden.id.value}:${productId}`;
+    const liberar = async (productId: string, reason: string) => {
+      await this.releaseReservation.execute({
+        productId, referenciaTipo: TipoReferencia.ProductionOrder, referenciaId: ref(productId), reason,
+      });
+    };
+
+    for (const comp of orden.componentes) {
+      await liberar(comp.productId, `Production order ${orden.codigo}: limpieza antes de reservar`);
     }
 
     const detalle: ReserveMaterialsOutput['detalle'] = [];
+    const reservados: string[] = [];
 
     for (const comp of orden.componentes) {
-      // Referencia única por (orden, componente) para que cada componente
-      // tenga su propia reserva independiente en Inventory
-      const referenciaId = `${orden.id.value}:${comp.productId}`;
-
       const reserveR = await this.reserveStock.execute({
         productId: comp.productId,
         cantidad: comp.cantidadTotalRequerida,
         referenciaTipo: TipoReferencia.ProductionOrder,
-        referenciaId,
+        referenciaId: ref(comp.productId),
       });
 
       if (reserveR.isErr) {
-        // Si falla un componente, reportar cuál falló
-        return err(applicationError('manufacturing.reserve_failed',
-          `Failed to reserve ${comp.productCode}: ${reserveR.error.message}`,
-          reserveR.error.category ?? 'conflict'));
+        for (const productId of reservados) {
+          await liberar(productId, `Production order ${orden.codigo}: reserva incompleta, se deshace`);
+        }
+        const sinStock = reserveR.error.category === 'conflict';
+        this.logger.warn(`Reserve failed for ${orden.codigo} at ${comp.productCode}: ${reserveR.error.code}; released ${reservados.length} component(s)`);
+        return err(applicationError(
+          sinStock ? 'manufacturing.insufficient_stock' : 'manufacturing.reserve_failed',
+          sinStock
+            ? `No hay stock suficiente de ${comp.productName} (${comp.productCode}): se necesitan ${comp.cantidadTotalRequerida} ${comp.unidadMedida}. No se reservó ningún material.`
+            : `No se pudo reservar ${comp.productName} (${comp.productCode}): ${reserveR.error.message}. No se reservó ningún material.`,
+          sinStock ? 'conflict' : (reserveR.error.category ?? 'validation'),
+          { productCode: comp.productCode, cantidad: comp.cantidadTotalRequerida, unidad: comp.unidadMedida, causa: reserveR.error.code },
+        ));
       }
 
+      reservados.push(comp.productId);
       detalle.push({
         productCode: comp.productCode,
         cantidadReservada: reserveR.value.totalAsignado,
@@ -219,9 +249,11 @@ export class ReserveMaterialsUseCase
       });
     }
 
-    // Marcar la orden como materialesReservados
     const markR = orden.markMaterialsReserved({ now });
     if (markR.isErr) {
+      for (const productId of reservados) {
+        await liberar(productId, `Production order ${orden.codigo}: no se pudo marcar como reservada`);
+      }
       return err(applicationError(markR.error.code, markR.error.message, 'validation'));
     }
 
@@ -425,11 +457,23 @@ export interface CompleteProductionOrderInput { ordenId: string; }
 export class CompleteProductionOrderUseCase
   implements UseCase<CompleteProductionOrderInput, OrdenProduccionView>
 {
+  private readonly logger = new Logger(CompleteProductionOrderUseCase.name);
+
   constructor(
     @Inject(ORDEN_PRODUCCION_REPOSITORY) private readonly repo: OrdenProduccionRepository,
+    private readonly dispatchInventory: DispatchInventoryUseCase,
     @Inject(CLOCK_PORT) private readonly clock: ClockPort,
   ) {}
 
+  /**
+   * Completa la orden y descuenta del inventario las materias primas reservadas
+   * (consumo automático al cierre, "backflush"). Por cada lote que sale se registra
+   * un consumo en la orden (trazabilidad lote de MP → orden → lote de PT).
+   *
+   * Se guarda la orden después de cada consumo: si algo falla a mitad de camino,
+   * lo ya despachado queda registrado y reintentar solo procesa lo que falta
+   * (un componente sin reservas activas se salta).
+   */
   async execute(input: CompleteProductionOrderInput): Promise<Result<OrdenProduccionView, ApplicationError>> {
     const now = this.clock.now();
 
@@ -438,6 +482,43 @@ export class CompleteProductionOrderUseCase
       return err(applicationError('manufacturing.order_not_found',
         `Production order ${input.ordenId} not found`, 'not_found'));
     }
+    if (orden.estado !== EstadoOrdenProduccion.EnProceso) {
+      return err(applicationError('manufacturing.must_be_en_proceso',
+        `Solo se completa una orden En proceso (estado actual: ${orden.estado}).`, 'validation'));
+    }
+    if (orden.lotesProducidos.length === 0) {
+      return err(applicationError('orden.no_lots_produced',
+        'Registra al menos un lote producido antes de completar la orden.', 'validation'));
+    }
+
+    for (const comp of orden.componentes) {
+      const dispR = await this.dispatchInventory.execute({
+        productId: comp.productId,
+        referenciaTipo: TipoReferencia.ProductionOrder,
+        referenciaId: `${orden.id.value}:${comp.productId}`,
+      });
+      if (dispR.isErr) {
+        if (dispR.error.code === 'inventory.no_reservations_to_dispatch') continue; // ya consumido
+        return err(applicationError('manufacturing.consumption_failed',
+          `No se pudo descontar ${comp.productName} (${comp.productCode}) del inventario: ${dispR.error.message}`,
+          dispR.error.category ?? 'validation'));
+      }
+      for (const d of dispR.value.detalle) {
+        const r = orden.recordConsumption({
+          productId: comp.productId,
+          productCode: comp.productCode,
+          loteId: d.loteId,
+          codigoLote: d.codigoLote,
+          cantidad: d.cantidad,
+          unidadMedida: comp.unidadMedida,
+          movimientoId: d.movimientoId,
+          now,
+        });
+        if (r.isErr) return err(applicationError(r.error.code, r.error.message, 'validation'));
+        // Un guardado por consumo: el repositorio exige version - 1 (un cambio por guardado).
+        await this.repo.save(orden);
+      }
+    }
 
     const complR = orden.complete({ now });
     if (complR.isErr) {
@@ -445,6 +526,7 @@ export class CompleteProductionOrderUseCase
     }
 
     await this.repo.save(orden);
+    this.logger.log(`Production order ${orden.codigo} completed; ${orden.consumos.length} consumption record(s)`);
     return ok(toOrdenProduccionView(orden));
   }
 }
@@ -482,7 +564,10 @@ export class CancelProductionOrderUseCase
     }
 
     // Liberar reservas en Inventory si estaban reservadas
-    if (orden.materialesReservados && orden.estado === EstadoOrdenProduccion.Planificada) {
+    // En Planificada (con materiales) y En proceso las reservas siguen activas: el
+    // consumo solo ocurre al completar. Se liberan para devolver el stock.
+    if (orden.materialesReservados &&
+        (orden.estado === EstadoOrdenProduccion.Planificada || orden.estado === EstadoOrdenProduccion.EnProceso)) {
       for (const comp of orden.componentes) {
         const referenciaId = `${orden.id.value}:${comp.productId}`;
         const relR = await this.releaseReservation.execute({
