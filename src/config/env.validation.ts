@@ -47,6 +47,10 @@ export const envValidationSchema = Joi.object({
   KEYCLOAK_AUDIENCE: Joi.string().required(),
   KEYCLOAK_ADMIN_USERNAME: Joi.string().optional(),
   KEYCLOAK_ADMIN_PASSWORD: Joi.string().optional(),
+  // Login de la app a través de la API (cliente confidencial con login directo).
+  // Opcionales: sin ellos, POST /v1/auth/login responde 503 y el resto de la API sigue igual.
+  KEYCLOAK_LOGIN_CLIENT_ID: Joi.string().allow('').optional(),
+  KEYCLOAK_LOGIN_CLIENT_SECRET: Joi.string().allow('').optional(),
 
   // JWT
   JWT_ALGORITHM: Joi.string().valid('RS256', 'RS384', 'RS512').default('RS256'),

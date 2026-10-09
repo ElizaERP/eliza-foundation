@@ -89,6 +89,13 @@ Variables que la app usa para hablar con la Admin API de Keycloak (provisión de
 | `KEYCLOAK_ADMIN_USERNAME` | string | `admin` | obligatoria | Service account o admin user con permisos en el realm |
 | `KEYCLOAK_ADMIN_PASSWORD` | string **🔴** | `admin` | obligatoria | Password del admin user. En producción USAR un service account con privilegios MÍNIMOS, no el root admin |
 
+**Login de la app a través de la API** (`POST /api/v1/auth/login`, `/refresh`, `/logout`). Opcionales: si faltan, esas rutas responden 503 y el resto de la API funciona igual.
+
+| Variable | Tipo | Default | Producción | Descripción |
+|---|---|---|---|---|
+| `KEYCLOAK_LOGIN_CLIENT_ID` | string | vacío | `eliza-app-login` | Cliente confidencial con solo *direct access grants* y los mappers de `eliza-mobile` (tenant_id, plant_id, warehouse_id, audiencia `eliza-api`) |
+| `KEYCLOAK_LOGIN_CLIENT_SECRET` | string **🔴** | vacío | obligatoria si se usa el login de la app | Secreto de ese cliente. En DEV lo escribe `crear-cliente-app-login.sh` en `api.env` |
+
 > **Hardening en producción**: en lugar de password grant del realm master, usar un service-account client con grant `client_credentials` y el rol `manage-users` solo sobre el realm `eliza`. Esto se documenta en `DEPLOYMENT-OCI.md`.
 
 ### 6. Tenant resolution (🟢)

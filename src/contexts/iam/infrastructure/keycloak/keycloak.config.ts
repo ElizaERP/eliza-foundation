@@ -19,6 +19,9 @@ export class KeycloakConfig {
   readonly adminPassword: string;
   readonly jwtAlgorithm: 'RS256' | 'RS384' | 'RS512';
   readonly jwksCacheMaxAgeMs: number;
+  /** Cliente del login de la app (eliza-app-login). null = login de la app no configurado. */
+  readonly loginClientId: string | null;
+  readonly loginClientSecret: string | null;
 
   constructor(config: ConfigService) {
     this.baseUrl = config.getOrThrow<string>('KEYCLOAK_BASE_URL');
@@ -32,6 +35,8 @@ export class KeycloakConfig {
     this.adminPassword = config.get<string>('KEYCLOAK_ADMIN_PASSWORD', 'admin');
     this.jwtAlgorithm = config.get<'RS256' | 'RS384' | 'RS512'>('JWT_ALGORITHM', 'RS256');
     this.jwksCacheMaxAgeMs = Number(config.get<number>('JWT_CACHE_MAX_AGE_MS', 600_000));
+    this.loginClientId = config.get<string>('KEYCLOAK_LOGIN_CLIENT_ID') || null;
+    this.loginClientSecret = config.get<string>('KEYCLOAK_LOGIN_CLIENT_SECRET') || null;
   }
 
   /** URL del endpoint del realm: <base>/admin/realms/<realm> */
@@ -42,5 +47,14 @@ export class KeycloakConfig {
   /** Endpoint del token (master realm) para obtener admin token. */
   get tokenUrl(): string {
     return `${this.baseUrl}/realms/master/protocol/openid-connect/token`;
+  }
+
+  /** Endpoints OIDC del realm de la aplicación (red interna). */
+  get realmTokenUrl(): string {
+    return `${this.baseUrl}/realms/${this.realm}/protocol/openid-connect/token`;
+  }
+
+  get realmLogoutUrl(): string {
+    return `${this.baseUrl}/realms/${this.realm}/protocol/openid-connect/logout`;
   }
 }
