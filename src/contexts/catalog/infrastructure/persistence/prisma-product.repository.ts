@@ -226,6 +226,7 @@ export class PrismaProductRepository implements ProductRepository {
     return {
       name: p.name,
       description: p.description,
+      barcode: p.barcode,
       status: p.status,
       packSize: p.packSize,
       netWeightGrams: p.netWeight ? new Prisma.Decimal(p.netWeight.grams) : null,

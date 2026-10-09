@@ -35,6 +35,7 @@ import {
   SearchProducts,
   SetBOM,
   SetProductPrice,
+  UpdateProductDetails,
 } from '../../application';
 import {
   CategoryResponse,
@@ -52,6 +53,7 @@ import {
   SetBOMRequest,
   SetProductPriceRequest,
   UnitOfMeasureResponse,
+  UpdateProductDetailsRequest,
   VersionedAction,
 } from './dto/catalog.dto';
 
@@ -91,6 +93,7 @@ export class ProductsController {
     private readonly getByCode: GetProductByCode,
     private readonly list: ListProducts,
     private readonly search: SearchProducts,
+    private readonly updateDetails: UpdateProductDetails,
   ) {}
 
   @Post()
@@ -145,6 +148,20 @@ export class ProductsController {
     return unwrap(await this.rename.execute({
       productId: id, newName: body.newName, expectedVersion: body.expectedVersion,
     })) as ProductResponse;
+  }
+
+  @Patch(':id/details')
+  @RequireRoles(...WRITER_ROLES)
+  @ApiOperation({
+    summary: 'Editar nombre y datos del producto (Sprint 14)',
+    description: 'Campo omitido = no cambia; null = se borra. Código, SKU, tipo, categoría y unidad no se editan.',
+  })
+  @ApiOkResponse({ type: ProductResponse })
+  async updateProductDetails(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() body: UpdateProductDetailsRequest,
+  ): Promise<ProductResponse> {
+    return unwrap(await this.updateDetails.execute({ productId: id, ...body })) as ProductResponse;
   }
 
   @Post(':id/activate')

@@ -324,6 +324,124 @@ export class Product extends AggregateRoot<ProductId, ProductProps> {
   }
 
   /**
+   * Editar datos del producto (Sprint 14). Cada campo: undefined = no cambia,
+   * null = se borra. Mismas reglas que al crear:
+   *   - vida útil y paquete enteros positivos; IVA 0-100; peso bruto >= neto;
+   *   - temperatura: mínima y máxima van juntas (o las dos en null);
+   *   - un servicio no tiene peso, vida útil ni temperatura;
+   *   - un producto controlado (cadena de frío) no puede quedar sin vida útil ni temperatura.
+   * Código, SKU, tipo, categoría y unidad no se editan aquí. Si nada cambia,
+   * no sube la versión (operación idempotente).
+   */
+  updateDetails(args: {
+    name?: string;
+    description?: string | null;
+    barcode?: string | null;
+    packSize?: number | null;
+    netWeightGrams?: number | null;
+    grossWeightGrams?: number | null;
+    expiryDays?: number | null;
+    storageTempMinC?: number | null;
+    storageTempMaxC?: number | null;
+    taxRate?: number | null;
+    now: Date;
+  }): Result<void, DomainError> {
+    if (this.props.status === ProductStatus.Discontinued) {
+      return err({ code: 'product.cannot_modify_discontinued', message: 'Cannot modify discontinued product' });
+    }
+    const next = { ...this.props };
+    const changes: string[] = [];
+
+    if (args.name !== undefined) {
+      const nameR = EntityName.create(args.name, 'productName');
+      if (nameR.isErr) return err(nameR.error);
+      if (nameR.value.value !== this.props.name.value) { next.name = nameR.value; changes.push('name'); }
+    }
+    if (args.description !== undefined) {
+      const d = args.description?.trim() || null;
+      if (d !== this.props.description) { next.description = d; changes.push('description'); }
+    }
+    if (args.barcode !== undefined) {
+      let b: Barcode | null = null;
+      const raw = args.barcode?.trim() || null;
+      if (raw) {
+        const bR = Barcode.create(raw);
+        if (bR.isErr) return err(bR.error);
+        b = bR.value;
+      }
+      if ((b?.value ?? null) !== (this.props.barcode?.value ?? null)) { next.barcode = b; changes.push('barcode'); }
+    }
+    if (args.packSize !== undefined) {
+      if (args.packSize !== null && (!Number.isInteger(args.packSize) || args.packSize <= 0)) {
+        return err({ code: 'product.pack_size_invalid', message: 'packSize must be a positive integer' });
+      }
+      if (args.packSize !== this.props.packSize) { next.packSize = args.packSize; changes.push('packSize'); }
+    }
+    for (const key of ['netWeightGrams', 'grossWeightGrams'] as const) {
+      const v = args[key];
+      if (v === undefined) continue;
+      let w: Weight | null = null;
+      if (v !== null) {
+        const wR = Weight.fromGrams(v);
+        if (wR.isErr) return err(wR.error);
+        w = wR.value;
+      }
+      const prop = key === 'netWeightGrams' ? 'netWeight' : 'grossWeight';
+      if ((w?.grams ?? null) !== (this.props[prop]?.grams ?? null)) { next[prop] = w; changes.push(prop); }
+    }
+    if (next.netWeight && next.grossWeight && next.grossWeight.grams < next.netWeight.grams) {
+      return err({ code: 'product.gross_less_than_net', message: 'Gross weight cannot be less than net weight' });
+    }
+    if (args.expiryDays !== undefined) {
+      if (args.expiryDays !== null && (!Number.isInteger(args.expiryDays) || args.expiryDays <= 0)) {
+        return err({ code: 'product.expiry_invalid', message: 'expiryDays must be a positive integer' });
+      }
+      if (args.expiryDays !== this.props.expiryDays) { next.expiryDays = args.expiryDays; changes.push('expiryDays'); }
+    }
+    if (args.storageTempMinC !== undefined || args.storageTempMaxC !== undefined) {
+      const min = args.storageTempMinC ?? null;
+      const max = args.storageTempMaxC ?? null;
+      let t: TemperatureRange | null = null;
+      if (min !== null || max !== null) {
+        if (min === null || max === null) {
+          return err({ code: 'product.temperature_incomplete', message: 'Storage temperature needs both min and max' });
+        }
+        const tR = TemperatureRange.create(min, max);
+        if (tR.isErr) return err(tR.error);
+        t = tR.value;
+      }
+      const cur = this.props.storageTemperature;
+      if ((t?.minC ?? null) !== (cur?.minC ?? null) || (t?.maxC ?? null) !== (cur?.maxC ?? null)) {
+        next.storageTemperature = t; changes.push('storageTemperature');
+      }
+    }
+    if (args.taxRate !== undefined) {
+      if (args.taxRate !== null && (!Number.isFinite(args.taxRate) || args.taxRate < 0 || args.taxRate > 100)) {
+        return err({ code: 'product.tax_rate_invalid', message: 'taxRate must be between 0 and 100' });
+      }
+      if (args.taxRate !== this.props.taxRate) { next.taxRate = args.taxRate; changes.push('taxRate'); }
+    }
+
+    if (this.props.type === ProductType.Service &&
+        (next.netWeight || next.grossWeight || next.expiryDays !== null || next.storageTemperature)) {
+      return err({ code: 'product.service_no_physical_attrs', message: 'Service products cannot have weight, expiry, or storage temperature' });
+    }
+    if (this.props.isControlled && this.props.type !== ProductType.Service && (!next.expiryDays || !next.storageTemperature)) {
+      return err({ code: 'product.controlled_requires_metadata', message: 'Controlled products require expiryDays and storage temperature range' });
+    }
+
+    if (changes.length === 0) return ok(undefined);
+    this.props = { ...next, updatedAt: args.now };
+    this.incrementVersion();
+    this.addDomainEvent(new ProductUpdated({
+      productId: this._id.value,
+      tenantId: this.props.tenantId,
+      changes,
+    }));
+    return ok(undefined);
+  }
+
+  /**
    * Fija (o quita, con null) el precio de lista en COP sin IVA. Se redondea a centavos.
    * Un producto descontinuado no cambia de precio.
    */
