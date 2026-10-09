@@ -174,6 +174,28 @@ export class RenameProduct
 }
 
 // =====================================================================
+// SetProductPrice — precio de lista (COP, sin IVA)
+// =====================================================================
+@Injectable()
+export class SetProductPrice
+  implements UseCase<{ productId: string; salePrice: number | null; expectedVersion?: number }, ProductView>
+{
+  constructor(
+    @Inject(PRODUCT_REPOSITORY) private readonly products: ProductRepository,
+    @Inject(CLOCK_PORT) private readonly clock: ClockPort,
+  ) {}
+
+  async execute(input: { productId: string; salePrice: number | null; expectedVersion?: number }) {
+    const product = await this.products.findById(input.productId);
+    if (!product) return err(applicationError('product.not_found', `Product not found`, 'not_found'));
+    const r = product.setSalePrice(input.salePrice, this.clock.now());
+    if (r.isErr) return err(applicationError(r.error.code, r.error.message, 'domain'));
+    await this.products.save(product, input.expectedVersion);
+    return ok<ProductView, ApplicationError>(toProductView(product));
+  }
+}
+
+// =====================================================================
 // SetBOM
 // =====================================================================
 export interface SetBOMInput {

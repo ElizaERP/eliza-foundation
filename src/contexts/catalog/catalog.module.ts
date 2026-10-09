@@ -16,6 +16,7 @@ import {
   RenameProduct,
   SearchProducts,
   SetBOM,
+  SetProductPrice,
 } from './application';
 import {
   CATEGORY_REPOSITORY,
@@ -49,6 +50,7 @@ const useCases: Provider[] = [
   ActivateProduct,
   DiscontinueProduct,
   RenameProduct,
+  SetProductPrice,
   SetBOM,
   GetProductById,
   GetProductByCode,

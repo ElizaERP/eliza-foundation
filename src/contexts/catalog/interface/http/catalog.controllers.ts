@@ -34,6 +34,7 @@ import {
   RenameProduct,
   SearchProducts,
   SetBOM,
+  SetProductPrice,
 } from '../../application';
 import {
   CategoryResponse,
@@ -49,6 +50,7 @@ import {
   RenameProductRequest,
   SearchProductsQuery,
   SetBOMRequest,
+  SetProductPriceRequest,
   UnitOfMeasureResponse,
   VersionedAction,
 } from './dto/catalog.dto';
@@ -67,6 +69,10 @@ const READER_ROLES = ['Tenant.Admin', 'Tenant.Viewer', 'Manufacturing.Manager', 
 
 const WRITER_ROLES = ['Tenant.Admin', 'Manufacturing.Manager', 'Inventory.Manager', 'Platform.Admin'];
 
+// El precio de lista es una decision comercial: lo fijan la administracion del tenant y el
+// gerente de ventas (no planta ni bodega). El vendedor solo lo lee.
+const PRICE_SETTER_ROLES = ['Tenant.Admin', 'Sales.Manager', 'Platform.Admin'];
+
 // =====================================================================
 // Products
 // =====================================================================
@@ -80,6 +86,7 @@ export class ProductsController {
     private readonly discontinue: DiscontinueProduct,
     private readonly rename: RenameProduct,
     private readonly setBom: SetBOM,
+    private readonly setPrice: SetProductPrice,
     private readonly getById: GetProductById,
     private readonly getByCode: GetProductByCode,
     private readonly list: ListProducts,
@@ -165,6 +172,23 @@ export class ProductsController {
   ): Promise<ProductResponse> {
     return unwrap(await this.discontinue.execute({
       productId: id, reason: body.reason, expectedVersion: body.expectedVersion,
+    })) as ProductResponse;
+  }
+
+  @Put(':id/price')
+  @HttpCode(HttpStatus.OK)
+  @RequireRoles(...PRICE_SETTER_ROLES)
+  @ApiOperation({
+    summary: 'Fijar o quitar el precio de lista (COP, sin IVA)',
+    description: 'Los pedidos que arma un vendedor toman este precio; sin precio de lista no puede agregar el producto.',
+  })
+  @ApiOkResponse({ type: ProductResponse })
+  async setProductPrice(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() body: SetProductPriceRequest,
+  ): Promise<ProductResponse> {
+    return unwrap(await this.setPrice.execute({
+      productId: id, salePrice: body.salePrice, expectedVersion: body.expectedVersion,
     })) as ProductResponse;
   }
 

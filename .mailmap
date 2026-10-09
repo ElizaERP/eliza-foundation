@@ -1,0 +1,5 @@
+# Una sola identidad para el historial (git log / shortlog / blame).
+# Formato: Nombre canonico <correo canonico> Nombre usado <correo usado>
+santo097 <santo.ebk@gmail.com> santo097 <santo097@users.noreply.github.com>
+santo097 <santo.ebk@gmail.com> Santiago Ramirez <84799490+santo097@users.noreply.github.com>
+santo097 <santo.ebk@gmail.com> Santo <testmoreno097@gmail.com>

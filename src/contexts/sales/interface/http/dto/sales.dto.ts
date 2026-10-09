@@ -187,9 +187,13 @@ export class AddOrderLineDto {
   @IsNumber() @Min(0.000001)
   cantidad!: number;
 
-  @ApiProperty({ example: 15000, description: 'Precio unitario en COP' })
-  @IsNumber() @Min(0.01)
-  precioUnitario!: number;
+  @ApiPropertyOptional({
+    example: 15000,
+    description: 'Precio unitario en COP. Si se omite se usa el precio de lista del producto. '
+      + 'Solo Sales.Manager / Tenant.Admin pueden enviarlo (p. ej. un descuento autorizado).',
+  })
+  @IsOptional() @IsNumber() @Min(0.01)
+  precioUnitario?: number;
 
   @ApiPropertyOptional({ example: 'Entrega parcial OK' })
   @IsOptional() @IsString() @Length(0, 500)

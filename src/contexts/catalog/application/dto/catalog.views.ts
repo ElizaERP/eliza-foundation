@@ -51,6 +51,7 @@ export interface ProductView {
   storageTempMinC: number | null;
   storageTempMaxC: number | null;
   taxRate: number | null;
+  salePrice: number | null;
   imageUrl: string | null;
   isControlled: boolean;
   components: BOMComponentView[];
@@ -78,6 +79,7 @@ export function toProductView(p: Product): ProductView {
     storageTempMinC: p.storageTemperature?.minC ?? null,
     storageTempMaxC: p.storageTemperature?.maxC ?? null,
     taxRate: p.taxRate,
+    salePrice: p.salePrice,
     imageUrl: p.imageUrl,
     isControlled: p.isControlled,
     components: p.components.map((c) => ({

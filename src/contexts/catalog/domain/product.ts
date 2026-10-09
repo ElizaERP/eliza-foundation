@@ -106,6 +106,8 @@ interface ProductProps {
   expiryDays: number | null;
   storageTemperature: TemperatureRange | null;
   taxRate: number | null;
+  /** Precio de lista en COP, sin IVA. null = el producto aún no tiene precio. */
+  salePrice: number | null;
   imageUrl: string | null;
   isControlled: boolean;
   components: BOMComponent[];
@@ -135,6 +137,7 @@ export class Product extends AggregateRoot<ProductId, ProductProps> {
   get expiryDays(): number | null { return this.props.expiryDays; }
   get storageTemperature(): TemperatureRange | null { return this.props.storageTemperature; }
   get taxRate(): number | null { return this.props.taxRate; }
+  get salePrice(): number | null { return this.props.salePrice; }
   get imageUrl(): string | null { return this.props.imageUrl; }
   get isControlled(): boolean { return this.props.isControlled; }
   get components(): ReadonlyArray<BOMComponent> { return this.props.components; }
@@ -243,6 +246,7 @@ export class Product extends AggregateRoot<ProductId, ProductProps> {
       expiryDays: args.expiryDays ?? null,
       storageTemperature,
       taxRate: args.taxRate ?? null,
+      salePrice: null,
       imageUrl: args.imageUrl?.trim() || null,
       isControlled,
       components: [],
@@ -315,6 +319,31 @@ export class Product extends AggregateRoot<ProductId, ProductProps> {
       productId: this._id.value,
       tenantId: this.props.tenantId,
       changes: ['name'],
+    }));
+    return ok(undefined);
+  }
+
+  /**
+   * Fija (o quita, con null) el precio de lista en COP sin IVA. Se redondea a centavos.
+   * Un producto descontinuado no cambia de precio.
+   */
+  setSalePrice(salePrice: number | null, now: Date): Result<void, DomainError> {
+    if (this.props.status === ProductStatus.Discontinued) {
+      return err({ code: 'product.cannot_modify_discontinued', message: 'Cannot modify discontinued product' });
+    }
+    if (salePrice !== null && (!Number.isFinite(salePrice) || salePrice <= 0)) {
+      return err({ code: 'product.sale_price_invalid', message: 'salePrice must be a positive number or null' });
+    }
+    const rounded = salePrice === null ? null : Math.round(salePrice * 100) / 100;
+    if (rounded === this.props.salePrice) return ok(undefined);
+
+    this.props = { ...this.props, salePrice: rounded, updatedAt: now };
+    this.incrementVersion();
+
+    this.addDomainEvent(new ProductUpdated({
+      productId: this._id.value,
+      tenantId: this.props.tenantId,
+      changes: ['salePrice'],
     }));
     return ok(undefined);
   }
@@ -393,6 +422,7 @@ export class Product extends AggregateRoot<ProductId, ProductProps> {
     expiryDays: number | null;
     storageTemperature: TemperatureRange | null;
     taxRate: number | null;
+    salePrice: number | null;
     imageUrl: string | null;
     isControlled: boolean;
     components: BOMComponent[];
@@ -417,6 +447,7 @@ export class Product extends AggregateRoot<ProductId, ProductProps> {
       expiryDays: args.expiryDays,
       storageTemperature: args.storageTemperature,
       taxRate: args.taxRate,
+      salePrice: args.salePrice,
       imageUrl: args.imageUrl,
       isControlled: args.isControlled,
       components: args.components,
