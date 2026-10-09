@@ -290,17 +290,24 @@ export class TransferStockUseCase implements UseCase<TransferStockInput, { ok: t
 // DispatchInventory
 // =====================================================================
 export interface DispatchInventoryInput { productId: string; referenciaTipo: TipoReferencia; referenciaId: string; }
+export interface DispatchInventoryOutput {
+  totalDespachado: number;
+  movimientoIds: string[];
+  /** Un registro por lote despachado (trazabilidad: qué lote salió y cuánto). */
+  detalle: Array<{ movimientoId: string; loteId: string; codigoLote: string; cantidad: number }>;
+}
 
 @Injectable()
-export class DispatchInventoryUseCase implements UseCase<DispatchInventoryInput, { totalDespachado: number; movimientoIds: string[] }> {
+export class DispatchInventoryUseCase implements UseCase<DispatchInventoryInput, DispatchInventoryOutput> {
   constructor(
     @Inject(EXISTENCIA_REPOSITORY) private readonly existenciaRepo: ExistenciaRepository,
     @Inject(MOVIMIENTO_REPOSITORY) private readonly movimientoRepo: MovimientoRepository,
+    @Inject(LOTE_REPOSITORY) private readonly loteRepo: LoteRepository,
     @Inject(CLOCK_PORT) private readonly clock: ClockPort,
     @Inject(TENANT_CONTEXT_PORT) private readonly ctx: TenantContextPort,
   ) {}
 
-  async execute(input: DispatchInventoryInput): Promise<Result<{ totalDespachado: number; movimientoIds: string[] }, ApplicationError>> {
+  async execute(input: DispatchInventoryInput): Promise<Result<DispatchInventoryOutput, ApplicationError>> {
     const tenantId = this.ctx.tryGetTenantId();
     if (!tenantId) throw new Error('Tenant context required');
     const userId = this.ctx.tryGetUserId() ?? 'system';
@@ -312,6 +319,7 @@ export class DispatchInventoryUseCase implements UseCase<DispatchInventoryInput,
     const existencias = await this.existenciaRepo.findBySku(input.productId);
     let totalDespachado = 0;
     const movimientoIds: string[] = [];
+    const detalle: DispatchInventoryOutput['detalle'] = [];
     for (const e of existencias) {
       const reserva = e.findActiveReservation(refR.value);
       if (!reserva) continue;
@@ -323,9 +331,11 @@ export class DispatchInventoryUseCase implements UseCase<DispatchInventoryInput,
       await this.existenciaRepo.save(e);
       totalDespachado += dispR.value;
       movimientoIds.push(movR.value.id.value);
+      const lote = await this.loteRepo.findById(e.loteId);
+      detalle.push({ movimientoId: movR.value.id.value, loteId: e.loteId.value, codigoLote: lote?.codigoLote ?? e.loteId.value, cantidad: dispR.value });
     }
     if (totalDespachado === 0) return err(applicationError('inventory.no_reservations_to_dispatch', `No active reservations found for ${refR.value.key}`, 'not_found'));
-    return ok({ totalDespachado, movimientoIds });
+    return ok({ totalDespachado, movimientoIds, detalle });
   }
 }
 
