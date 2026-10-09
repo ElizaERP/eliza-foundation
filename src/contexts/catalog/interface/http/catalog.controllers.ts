@@ -58,8 +58,11 @@ function unwrap<T>(r: Result<T, ApplicationError>): T {
   return r.value;
 }
 
+// Lectura del catalogo: ademas de los roles de gestion, los operativos que mueven
+// producto (bodega y planta) necesitan ver nombres, codigos y unidades.
 const READER_ROLES = ['Tenant.Admin', 'Tenant.Viewer', 'Manufacturing.Manager', 'Manufacturing.Supervisor',
-  'Inventory.Manager', 'Sales.Manager', 'Sales.Salesperson', 'Quality.Manager', 'Quality.Inspector',
+  'Manufacturing.Operator', 'Inventory.Manager', 'Inventory.Operator', 'Inventory.Reader',
+  'Sales.Manager', 'Sales.Salesperson', 'Quality.Manager', 'Quality.Inspector',
   'Procurement.Manager', 'Procurement.Buyer', 'Platform.Admin', 'Platform.Support'];
 
 const WRITER_ROLES = ['Tenant.Admin', 'Manufacturing.Manager', 'Inventory.Manager', 'Platform.Admin'];
