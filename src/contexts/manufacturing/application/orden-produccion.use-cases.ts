@@ -35,6 +35,8 @@ import {
 import {
   PRODUCT_REPOSITORY,
   ProductRepository,
+  UNIT_OF_MEASURE_REPOSITORY,
+  UnitOfMeasureRepository,
 } from '@eliza/contexts/catalog/domain';
 
 // --- Inventory application (cross-BC) ---
@@ -68,6 +70,7 @@ export class CreateProductionOrderUseCase
   constructor(
     @Inject(ORDEN_PRODUCCION_REPOSITORY) private readonly repo: OrdenProduccionRepository,
     @Inject(PRODUCT_REPOSITORY) private readonly productRepo: ProductRepository,
+    @Inject(UNIT_OF_MEASURE_REPOSITORY) private readonly uomRepo: UnitOfMeasureRepository,
     @Inject(CLOCK_PORT) private readonly clock: ClockPort,
     @Inject(TENANT_CONTEXT_PORT) private readonly ctx: TenantContextPort,
   ) {}
@@ -98,15 +101,33 @@ export class CreateProductionOrderUseCase
         `Product ${product.code} has no BOM components defined`, 'validation'));
     }
 
-    // Capturar snapshot del BOM × cantidadObjetivo
-    const componentes: ComponenteBomSnapshot[] = bomComponents.map((bom: any) => ({
-      productId: bom.componentProductId,
-      productCode: bom.componentProduct?.code ?? bom.componentProductId,
-      productName: bom.componentProduct?.name ?? bom.componentProductId,
-      cantidadPorUnidad: Number(bom.quantity),
-      cantidadTotalRequerida: Math.round(Number(bom.quantity) * input.cantidadObjetivo * 1_000_000) / 1_000_000,
-      unidadMedida: bom.unitOfMeasure?.symbol ?? bom.unitOfMeasure?.code ?? 'un',
-    }));
+    // Capturar snapshot del BOM × cantidadObjetivo.
+    // product.components son entidades de dominio del Catálogo (BOMComponent): el id del
+    // componente y la unidad son value objects y la cantidad es un Quantity, así que el
+    // código, nombre y símbolo se resuelven con los repositorios del Catálogo.
+    const componentIds = bomComponents.map((c) => c.componentProductId.value);
+    const uomIds = [...new Set(bomComponents.map((c) => c.uomId.value))];
+    const [componentProducts, uoms] = await Promise.all([
+      this.productRepo.findByIds(componentIds),
+      this.uomRepo.findByIds(uomIds),
+    ]);
+    const productById = new Map(componentProducts.map((p) => [p.id.value, p]));
+    const uomById = new Map(uoms.map((u) => [u.id.value, u]));
+
+    const componentes: ComponenteBomSnapshot[] = bomComponents.map((bom) => {
+      const componentId = bom.componentProductId.value;
+      const componentProduct = productById.get(componentId);
+      const uom = uomById.get(bom.uomId.value);
+      const cantidadPorUnidad = bom.quantity.amount;
+      return {
+        productId: componentId,
+        productCode: componentProduct?.code ?? componentId,
+        productName: componentProduct?.name ?? componentId,
+        cantidadPorUnidad,
+        cantidadTotalRequerida: Math.round(cantidadPorUnidad * input.cantidadObjetivo * 1_000_000) / 1_000_000,
+        unidadMedida: uom?.symbol ?? uom?.code ?? 'un',
+      };
+    });
 
     const ordenR = OrdenDeProduccion.create({
       tenantId,
