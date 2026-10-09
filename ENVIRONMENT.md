@@ -122,6 +122,7 @@ Variables que la app usa para hablar con la Admin API de Keycloak (provisión de
 | Variable | Tipo | Default | Producción | Descripción |
 |---|---|---|---|---|
 | `HELMET_ENABLED` | bool | `true` | `true` | Headers de seguridad (HSTS, X-Frame-Options, etc.) |
+| `TRUST_PROXY` | string | `loopback, linklocal, uniquelocal` | según la red | Proxies confiables para `X-Forwarded-For` (sintaxis de Express). Define `req.ip`: límite de intentos del login e IP de auditoría |
 | `CORS_ORIGINS` | csv | `` | obligatoria | Lista de origenes permitidos. Ej: `https://app.eliza.com,https://admin.eliza.com`. Vacío = bloqueado |
 | `THROTTLE_TTL_SECONDS` | int | `60` | `60` | Ventana de rate limiting |
 | `THROTTLE_LIMIT` | int | `100` | `1000` | Requests por ventana por IP. Subir en prod tras load balancer con IP real |

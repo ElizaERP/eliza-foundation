@@ -1,6 +1,7 @@
 import { ValidationPipe, VersioningType } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { NestFactory } from '@nestjs/core';
+import type { NestExpressApplication } from '@nestjs/platform-express';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import compression from 'compression';
 import helmet from 'helmet';
@@ -8,11 +9,21 @@ import { ClsService } from 'nestjs-cls';
 import { Logger as PinoLogger } from 'nestjs-pino';
 
 import { AppModule } from './app.module';
+import { DEFAULT_TRUST_PROXY } from './config/trust-proxy';
 import { ProblemDetailsExceptionFilter } from './shared-kernel/infrastructure/exceptions/problem-details.filter';
 
 async function bootstrap(): Promise<void> {
-  const app = await NestFactory.create(AppModule, { bufferLogs: true });
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, { bufferLogs: true });
   const config = app.get(ConfigService);
+
+  // -------- IP real del cliente detrás de los proxies --------
+  // Cadena en DEV: cliente → Tailscale (Serve/Funnel) → Nginx (red de Docker) → API.
+  // Se confía en X-Forwarded-For solo cuando lo agrega un proxy de red privada
+  // (loopback, link-local, 10/8, 172.16/12, 192.168/16). Express recorre la
+  // cabecera de derecha a izquierda y req.ip queda en la primera IP no confiable:
+  // la del cliente. Un X-Forwarded-For inventado por el cliente queda a la
+  // izquierda y se ignora.
+  app.set('trust proxy', config.get<string>('TRUST_PROXY', DEFAULT_TRUST_PROXY));
 
   // -------- Logger Pino como logger global --------
   app.useLogger(app.get(PinoLogger));
