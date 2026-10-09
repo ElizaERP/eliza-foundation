@@ -1,7 +1,5 @@
 import {
-  BadRequestException,
   Body,
-  ConflictException,
   Controller,
   Delete,
   Get,
@@ -56,12 +54,15 @@ const ORDER_AUTHOR_ROLES = [...WRITER_ROLES, 'Sales.Salesperson'];
 // Pueden indicar un precio distinto al de lista en una linea (p. ej. un descuento autorizado).
 const PRICE_SETTER_ROLES = ['Platform.Admin', 'Tenant.Admin', 'Sales.Manager'];
 
+/**
+ * Devuelve el valor o lanza el ApplicationError tal cual: el filtro global
+ * (Problem Details) lo convierte en 404 / 409 / 400 según su categoría y
+ * conserva el código (p. ej. sales.insufficient_stock) y los detalles, que la
+ * app usa para mostrar el mensaje correcto.
+ */
 function unwrap<T>(r: Result<T, ApplicationError>): T {
   if (r.isOk) return r.value;
-  const e = r.error;
-  if (e.category === 'not_found') throw new NotFoundException(e.message);
-  if (e.category === 'conflict') throw new ConflictException({ code: e.code, message: e.message, details: e.details });
-  throw new BadRequestException({ code: e.code, message: e.message, details: e.details });
+  throw r.error;
 }
 
 @ApiTags('Sales · Orders')

@@ -289,9 +289,17 @@ export class ReserveOrderStockUseCase
   constructor(
     @Inject(ORDEN_VENTA_REPOSITORY) private readonly repo: OrdenVentaRepository,
     private readonly reserveStock: ReserveStockUseCase,
+    private readonly releaseReservation: ReleaseReservationUseCase,
     @Inject(CLOCK_PORT) private readonly clock: ClockPort,
   ) {}
 
+  /**
+   * Reserva todas las líneas o ninguna. Si una línea no alcanza, se liberan las
+   * reservas que ya se hicieron en este intento (compensación) y el pedido queda
+   * en Confirmada, listo para reintentar cuando haya stock. Antes de empezar se
+   * liberan reservas que hubiera dejado un intento anterior interrumpido, para
+   * que reintentar nunca reserve dos veces lo mismo.
+   */
   async execute(input: { ordenId: string }): Promise<Result<ReserveOrderStockOutput, ApplicationError>> {
     const now = this.clock.now();
 
@@ -302,27 +310,51 @@ export class ReserveOrderStockUseCase
     }
     if (orden.estado !== EstadoOrdenVenta.Confirmada) {
       return err(applicationError('sales.must_be_confirmed',
-        `Order must be in Confirmada state to reserve stock (current: ${orden.estado})`, 'validation'));
+        `El pedido debe estar Confirmado para reservar stock (estado actual: ${orden.estado}).`, 'validation'));
+    }
+
+    const ref = (productId: string) => `${orden.id.value}:${productId}`;
+    const liberar = async (productId: string, reason: string) => {
+      // not_found = no había reservas para esa línea: no es un error aquí.
+      await this.releaseReservation.execute({
+        productId, referenciaTipo: TipoReferencia.SalesOrder, referenciaId: ref(productId), reason,
+      });
+    };
+
+    // Limpieza: reservas huérfanas de un intento anterior que quedó a medias.
+    for (const linea of orden.lineas) {
+      await liberar(linea.productId, `Sales order ${orden.codigo}: limpieza antes de reservar`);
     }
 
     const detalle: ReserveOrderStockOutput['detalle'] = [];
+    const reservadas: string[] = [];
 
     for (const linea of orden.lineas) {
-      const referenciaId = `${orden.id.value}:${linea.productId}`;
-
       const reserveR = await this.reserveStock.execute({
         productId: linea.productId,
         cantidad: linea.cantidad,
         referenciaTipo: TipoReferencia.SalesOrder,
-        referenciaId,
+        referenciaId: ref(linea.productId),
       });
 
       if (reserveR.isErr) {
-        return err(applicationError('sales.reserve_failed',
-          `Failed to reserve ${linea.productCode}: ${reserveR.error.message}`,
-          reserveR.error.category ?? 'conflict'));
+        // Compensación: todo o nada.
+        for (const productId of reservadas) {
+          await liberar(productId, `Sales order ${orden.codigo}: reserva incompleta, se deshace`);
+        }
+        const sinStock = reserveR.error.category === 'conflict';
+        this.logger.warn(`Reserve failed for ${orden.codigo} at ${linea.productCode}: ${reserveR.error.code}; released ${reservadas.length} line(s)`);
+        return err(applicationError(
+          sinStock ? 'sales.insufficient_stock' : 'sales.reserve_failed',
+          sinStock
+            ? `No hay stock suficiente de ${linea.productName} (${linea.productCode}) para reservar ${linea.cantidad}. No se reservó ninguna línea del pedido.`
+            : `No se pudo reservar ${linea.productName} (${linea.productCode}): ${reserveR.error.message}. No se reservó ninguna línea del pedido.`,
+          sinStock ? 'conflict' : (reserveR.error.category ?? 'validation'),
+          { productCode: linea.productCode, cantidad: linea.cantidad, causa: reserveR.error.code },
+        ));
       }
 
+      reservadas.push(linea.productId);
       detalle.push({
         productCode: linea.productCode,
         cantidadReservada: reserveR.value.totalAsignado,
@@ -332,6 +364,9 @@ export class ReserveOrderStockUseCase
 
     const markR = orden.markReserved({ now });
     if (markR.isErr) {
+      for (const productId of reservadas) {
+        await liberar(productId, `Sales order ${orden.codigo}: no se pudo marcar como reservado`);
+      }
       return err(applicationError(markR.error.code, markR.error.message, 'validation'));
     }
 
