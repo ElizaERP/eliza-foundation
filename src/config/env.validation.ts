@@ -1,5 +1,7 @@
 import Joi from 'joi';
 
+import { DEFAULT_TRUST_PROXY } from './trust-proxy';
+
 /**
  * Schema de validación para las variables de entorno.
  *
@@ -69,6 +71,8 @@ export const envValidationSchema = Joi.object({
 
   // Security
   HELMET_ENABLED: Joi.boolean().default(true),
+  // Proxies en los que se confía para X-Forwarded-For (sintaxis de Express 'trust proxy').
+  TRUST_PROXY: Joi.string().default(DEFAULT_TRUST_PROXY),
   CORS_ORIGINS: Joi.string().default(''),
   THROTTLE_TTL_SECONDS: Joi.number().integer().min(1).default(60),
   THROTTLE_LIMIT: Joi.number().integer().min(1).default(100),

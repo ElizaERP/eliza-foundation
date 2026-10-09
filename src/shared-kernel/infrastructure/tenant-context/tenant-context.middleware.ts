@@ -156,9 +156,12 @@ export class TenantContextMiddleware implements NestMiddleware {
     return parts[0]; // tenant-code
   }
 
+  /**
+   * IP del cliente para auditoría. Usa req.ip, que Express resuelve con
+   * 'trust proxy' (main.ts): ignora lo que el cliente ponga en X-Forwarded-For.
+   * Antes se tomaba el PRIMER valor de esa cabecera, que el cliente controla.
+   */
   private extractIp(req: Request): string {
-    const fwd = req.headers['x-forwarded-for'];
-    if (typeof fwd === 'string') return fwd.split(',')[0].trim();
-    return req.socket.remoteAddress ?? 'unknown';
+    return req.ip ?? req.socket.remoteAddress ?? 'unknown';
   }
 }
