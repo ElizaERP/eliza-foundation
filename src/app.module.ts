@@ -5,6 +5,7 @@ import { LoggerModule } from 'nestjs-pino';
 import { ClsMiddleware } from 'nestjs-cls';
 
 import { envValidationSchema } from './config/env.validation';
+import { LOG_REDACT_CENSOR, LOG_REDACT_PATHS } from './config/log-redaction';
 import { AuditContextModule } from './contexts/audit/audit.module';
 import { CatalogContextModule } from './contexts/catalog/catalog.module';
 import { IamContextModule } from './contexts/iam/iam.module';
@@ -52,16 +53,8 @@ import { SalesContextModule } from './contexts/sales/sales.module';
           autoLogging: {
             ignore: (req) => (req.url ?? '').startsWith('/api/health'),
           },
-          redact: {
-            paths: [
-              'req.headers.authorization',
-              'req.headers.cookie',
-              '*.password',
-              '*.client_secret',
-              '*.creditCard',
-            ],
-            censor: '[REDACTED]',
-          },
+          // Credenciales e identidad de Tailscale: ver config/log-redaction.ts.
+          redact: { paths: LOG_REDACT_PATHS, censor: LOG_REDACT_CENSOR },
           // correlationId real de la peticion (el que fija TenantContextMiddleware en la respuesta),
           // aunque el cliente no envie X-Correlation-Id; asi cada log se puede cruzar con auditoria.
           customProps: (req, res) => ({
