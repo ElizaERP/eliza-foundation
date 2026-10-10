@@ -641,6 +641,8 @@ model OrdenProduccion {
   componentes           Json                   @default("[]")
   materialesReservados  Boolean                @default(false) @map("materiales_reservados")
   notas                 String?
+  /// Jornada de producción (varias órdenes del mismo día de planta). null = orden suelta.
+  jornada               String?                @db.VarChar(40)
   canceladoMotivo       String?                @map("cancelado_motivo")
   canceladoPor          String?                @map("cancelado_por") @db.Uuid
   canceladoEn           DateTime?              @map("cancelado_en") @db.Timestamptz
@@ -660,6 +662,7 @@ model OrdenProduccion {
   @@index([tenantId, estado])
   @@index([productoTerminadoId])
   @@index([fechaProgramada])
+  @@index([tenantId, jornada])
   @@map("ordenes_produccion")
   @@schema("manufacturing")
 }

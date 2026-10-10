@@ -60,6 +60,8 @@ export interface CreateProductionOrderInput {
   prioridad?: PrioridadProduccion;
   fechaProgramada?: Date;
   notas?: string;
+  /** Lo pone CreateJornada; desde la API de órdenes sueltas no se envía. */
+  jornada?: string;
 }
 
 @Injectable()
@@ -99,7 +101,7 @@ export class CreateProductionOrderUseCase
     const bomComponents = product.components ?? [];
     if (bomComponents.length === 0) {
       return err(applicationError('manufacturing.no_bom',
-        `Product ${product.code} has no BOM components defined`, 'validation'));
+        `${product.name} no tiene receta: defínela en Catálogo antes de producirlo.`, 'validation', { productCode: product.code }));
     }
 
     // Capturar snapshot del BOM × cantidadObjetivo.
@@ -141,6 +143,7 @@ export class CreateProductionOrderUseCase
       componentes,
       fechaProgramada: input.fechaProgramada,
       notas: input.notas,
+      jornada: input.jornada,
       now,
     });
     if (ordenR.isErr) {
@@ -451,7 +454,17 @@ export class RecordProductionUseCase
 // 6. CompleteProductionOrder
 // =====================================================================
 
-export interface CompleteProductionOrderInput { ordenId: string; }
+export interface CompleteProductionOrderInput {
+  ordenId: string;
+  /**
+   * Lo que se gastó de verdad de cada materia prima (mermas, sobrantes).
+   * Componente omitido = consumo teórico: receta × cantidad realmente producida.
+   * 0 = no se usó (se devuelve toda la reserva).
+   */
+  consumos?: Array<{ productId: string; cantidad: number }>;
+}
+
+const round6 = (n: number): number => Math.round(n * 1_000_000) / 1_000_000;
 
 @Injectable()
 export class CompleteProductionOrderUseCase
@@ -462,17 +475,25 @@ export class CompleteProductionOrderUseCase
   constructor(
     @Inject(ORDEN_PRODUCCION_REPOSITORY) private readonly repo: OrdenProduccionRepository,
     private readonly dispatchInventory: DispatchInventoryUseCase,
+    private readonly reserveStock: ReserveStockUseCase,
+    private readonly releaseReservation: ReleaseReservationUseCase,
     @Inject(CLOCK_PORT) private readonly clock: ClockPort,
   ) {}
 
   /**
-   * Completa la orden y descuenta del inventario las materias primas reservadas
-   * (consumo automático al cierre, "backflush"). Por cada lote que sale se registra
-   * un consumo en la orden (trazabilidad lote de MP → orden → lote de PT).
+   * Completa la orden y descuenta del inventario lo que de verdad se consumió.
    *
-   * Se guarda la orden después de cada consumo: si algo falla a mitad de camino,
-   * lo ya despachado queda registrado y reintentar solo procesa lo que falta
-   * (un componente sin reservas activas se salta).
+   * Por cada materia prima: consumo = el que manda el operario, o si no lo manda,
+   * receta × cantidad REALMENTE producida (antes se descontaba siempre lo
+   * reservado para la cantidad objetivo, aunque se produjera más o menos).
+   *   - Igual a lo reservado → se despacha la reserva tal cual.
+   *   - Distinto → se libera la reserva y se reserva/despacha exactamente el
+   *     consumo (FEFO). Si es más y no alcanza el stock, se vuelve a apartar lo
+   *     que estaba reservado y la orden no se completa.
+   *   - 0 → solo se libera la reserva.
+   * Cada lote que sale queda como consumo de la orden (trazabilidad lote MP →
+   * orden → lote PT). Se guarda la orden tras cada consumo: un reintento salta
+   * las materias primas que ya tienen consumos registrados.
    */
   async execute(input: CompleteProductionOrderInput): Promise<Result<OrdenProduccionView, ApplicationError>> {
     const now = this.clock.now();
@@ -491,14 +512,74 @@ export class CompleteProductionOrderUseCase
         'Registra al menos un lote producido antes de completar la orden.', 'validation'));
     }
 
+    // Validar los consumos enviados
+    const pedidos = new Map<string, number>();
+    for (const c of input.consumos ?? []) {
+      if (!orden.componentes.some((k) => k.productId === c.productId)) {
+        return err(applicationError('manufacturing.consumption_not_in_bom',
+          'Uno de los consumos no es una materia prima de esta orden.', 'validation', { productId: c.productId }));
+      }
+      if (pedidos.has(c.productId)) {
+        return err(applicationError('manufacturing.consumption_duplicated',
+          'Una materia prima aparece dos veces en los consumos.', 'validation', { productId: c.productId }));
+      }
+      if (!Number.isFinite(c.cantidad) || c.cantidad < 0) {
+        return err(applicationError('manufacturing.consumption_invalid',
+          'El consumo de cada materia prima debe ser 0 o más.', 'validation', { productId: c.productId }));
+      }
+      pedidos.set(c.productId, round6(c.cantidad));
+    }
+
+    const producido = orden.cantidadRealProducida;
     for (const comp of orden.componentes) {
+      // Reintento: esta materia prima ya se descontó
+      if (orden.consumos.some((c) => c.productId === comp.productId)) continue;
+
+      const ref = `${orden.id.value}:${comp.productId}`;
+      const consumo = pedidos.get(comp.productId) ?? round6(comp.cantidadPorUnidad * producido);
+      const reservado = comp.cantidadTotalRequerida;
+
+      let despachar = true;
+      if (consumo !== reservado) {
+        await this.releaseReservation.execute({
+          productId: comp.productId, referenciaTipo: TipoReferencia.ProductionOrder, referenciaId: ref,
+          reason: `Production order ${orden.codigo}: consumo real ${consumo} ${comp.unidadMedida} (reservado ${reservado})`,
+        });
+        if (consumo === 0) {
+          despachar = false;
+        } else {
+          const resR = await this.reserveStock.execute({
+            productId: comp.productId, cantidad: consumo,
+            referenciaTipo: TipoReferencia.ProductionOrder, referenciaId: ref,
+          });
+          if (resR.isErr) {
+            // Devolver la reserva original para no dejar la orden sin materiales
+            const back = await this.reserveStock.execute({
+              productId: comp.productId, cantidad: reservado,
+              referenciaTipo: TipoReferencia.ProductionOrder, referenciaId: ref,
+            });
+            if (back.isErr) this.logger.error(`Could not restore reservation of ${comp.productCode} for ${orden.codigo}: ${back.error.code}`);
+            const sinStock = resR.error.category === 'conflict';
+            return err(applicationError(
+              sinStock ? 'manufacturing.insufficient_stock' : 'manufacturing.consumption_failed',
+              sinStock
+                ? `No hay stock para descontar ${consumo} ${comp.unidadMedida} de ${comp.productName}: solo había ${reservado} ${comp.unidadMedida} reservados y no alcanza lo disponible. La orden no se completó.`
+                : `No se pudo descontar ${comp.productName}: ${resR.error.message}. La orden no se completó.`,
+              sinStock ? 'conflict' : (resR.error.category ?? 'validation'),
+              { productCode: comp.productCode, consumo, reservado, unidad: comp.unidadMedida },
+            ));
+          }
+        }
+      }
+      if (!despachar) continue;
+
       const dispR = await this.dispatchInventory.execute({
         productId: comp.productId,
         referenciaTipo: TipoReferencia.ProductionOrder,
-        referenciaId: `${orden.id.value}:${comp.productId}`,
+        referenciaId: ref,
       });
       if (dispR.isErr) {
-        if (dispR.error.code === 'inventory.no_reservations_to_dispatch') continue; // ya consumido
+        if (dispR.error.code === 'inventory.no_reservations_to_dispatch') continue;
         return err(applicationError('manufacturing.consumption_failed',
           `No se pudo descontar ${comp.productName} (${comp.productCode}) del inventario: ${dispR.error.message}`,
           dispR.error.category ?? 'validation'));

@@ -29,6 +29,7 @@ import {
 } from '@eliza/contexts/manufacturing/application';
 import {
   CancelProductionOrderDto,
+  CompleteProductionOrderDto,
   CreateProductionOrderDto,
   ListProductionOrdersQueryDto,
   RecordConsumptionDto,
@@ -136,9 +137,15 @@ export class ProductionOrdersController {
   @Post(':id/complete')
   @HttpCode(HttpStatus.OK)
   @RequireRoles(...WRITER_ROLES)
-  @ApiOperation({ summary: 'Complete production order: consumes reserved raw materials (backflush) and closes; requires at least one produced lot' })
-  async complete(@Param('id', ParseUUIDPipe) id: string): Promise<OrdenProduccionView> {
-    return unwrap(await this.completeOrder.execute({ ordenId: id }));
+  @ApiOperation({
+    summary: 'Complete production order: consumes the raw materials actually used and closes; requires at least one produced lot',
+    description: 'Sin body: receta × cantidad realmente producida. Con consumos: lo que se gastó de verdad por materia prima.',
+  })
+  async complete(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: CompleteProductionOrderDto,
+  ): Promise<OrdenProduccionView> {
+    return unwrap(await this.completeOrder.execute({ ordenId: id, consumos: dto?.consumos }));
   }
 
   @Post(':id/cancel')

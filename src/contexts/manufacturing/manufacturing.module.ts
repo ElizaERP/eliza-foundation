@@ -6,7 +6,13 @@ import { InventoryContextModule } from '@eliza/contexts/inventory/inventory.modu
 import { ORDEN_PRODUCCION_REPOSITORY } from '@eliza/contexts/manufacturing/domain';
 
 import {
+  CancelJornadaUseCase,
   CancelProductionOrderUseCase,
+  CreateJornadaUseCase,
+  GetJornadaUseCase,
+  ListJornadasUseCase,
+  ReserveJornadaUseCase,
+  StartJornadaUseCase,
   CompleteProductionOrderUseCase,
   CreateProductionOrderUseCase,
   GetProductionOrderByIdUseCase,
@@ -20,11 +26,12 @@ import {
 
 import { PrismaOrdenProduccionRepository } from '@eliza/contexts/manufacturing/infrastructure/persistence/prisma-orden-produccion.repository';
 
+import { JornadasController } from '@eliza/contexts/manufacturing/interface/http/jornadas.controller';
 import { ProductionOrdersController } from '@eliza/contexts/manufacturing/interface/http/production-orders.controller';
 
 @Module({
   imports: [CatalogContextModule, InventoryContextModule],
-  controllers: [ProductionOrdersController],
+  controllers: [ProductionOrdersController, JornadasController],
   providers: [
     { provide: ORDEN_PRODUCCION_REPOSITORY, useClass: PrismaOrdenProduccionRepository },
     CreateProductionOrderUseCase,
@@ -36,6 +43,12 @@ import { ProductionOrdersController } from '@eliza/contexts/manufacturing/interf
     CancelProductionOrderUseCase,
     GetProductionOrderByIdUseCase,
     ListProductionOrdersUseCase,
+    CreateJornadaUseCase,
+    GetJornadaUseCase,
+    ListJornadasUseCase,
+    ReserveJornadaUseCase,
+    StartJornadaUseCase,
+    CancelJornadaUseCase,
     ManufacturingExternalEventHandlers,
   ],
   exports: [ORDEN_PRODUCCION_REPOSITORY],
