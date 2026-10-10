@@ -132,6 +132,8 @@ interface OrdenProduccionProps {
   consumos: ConsumoMp[];
   lotesProducidos: LoteProducido[];
   notas: string | null;
+  /** Jornada de producción a la que pertenece (varias órdenes, un día de planta). null = orden suelta. */
+  jornada: string | null;
   /** Quién canceló y por qué (solo si estado = Cancelada) */
   canceladoMotivo: string | null;
   canceladoPor: string | null;
@@ -180,6 +182,7 @@ export class OrdenDeProduccion extends AggregateRoot<OrdenProduccionId, OrdenPro
   get consumos(): ReadonlyArray<ConsumoMp> { return this.props.consumos; }
   get lotesProducidos(): ReadonlyArray<LoteProducido> { return this.props.lotesProducidos; }
   get notas(): string | null { return this.props.notas; }
+  get jornada(): string | null { return this.props.jornada; }
   get canceladoMotivo(): string | null { return this.props.canceladoMotivo; }
   get canceladoPor(): string | null { return this.props.canceladoPor; }
   get canceladoEn(): Date | null { return this.props.canceladoEn; }
@@ -211,6 +214,7 @@ export class OrdenDeProduccion extends AggregateRoot<OrdenProduccionId, OrdenPro
     componentes: ComponenteBomSnapshot[];
     fechaProgramada?: Date;
     notas?: string;
+    jornada?: string;
     now: Date;
   }): Result<OrdenDeProduccion, DomainError> {
     const codigoR = CodigoOrdenProduccion.create(args.codigo);
@@ -239,6 +243,7 @@ export class OrdenDeProduccion extends AggregateRoot<OrdenProduccionId, OrdenPro
       consumos: [],
       lotesProducidos: [],
       notas: args.notas?.trim() || null,
+      jornada: args.jornada ?? null,
       canceladoMotivo: null,
       canceladoPor: null,
       canceladoEn: null,
@@ -282,6 +287,22 @@ export class OrdenDeProduccion extends AggregateRoot<OrdenProduccionId, OrdenPro
       tenantId: this.props.tenantId,
       componentesReservados: this.props.componentes.length,
     }));
+    return ok(undefined);
+  }
+
+  /**
+   * Deshace la marca de materiales reservados (la jornada no pudo reservar todos
+   * sus productos y devuelve lo apartado). Solo en Planificada; el use case
+   * libera las reservas en Inventario.
+   */
+  releaseMaterials(args: { now: Date }): Result<void, DomainError> {
+    if (this.props.estado !== EstadoOrdenProduccion.Planificada) {
+      return err({ code: 'orden.invalid_state_for_reservation',
+        message: `Cannot release materials in state ${this.props.estado}` });
+    }
+    if (!this.props.materialesReservados) return ok(undefined);
+    this.props = { ...this.props, materialesReservados: false, updatedAt: args.now };
+    this.incrementVersion();
     return ok(undefined);
   }
 
@@ -519,6 +540,7 @@ export class OrdenDeProduccion extends AggregateRoot<OrdenProduccionId, OrdenPro
     consumos: ConsumoMp[];
     lotesProducidos: LoteProducido[];
     notas: string | null;
+    jornada?: string | null;
     canceladoMotivo: string | null;
     canceladoPor: string | null;
     canceladoEn: Date | null;
@@ -544,6 +566,7 @@ export class OrdenDeProduccion extends AggregateRoot<OrdenProduccionId, OrdenPro
       consumos: args.consumos,
       lotesProducidos: args.lotesProducidos,
       notas: args.notas,
+      jornada: args.jornada ?? null,
       canceladoMotivo: args.canceladoMotivo,
       canceladoPor: args.canceladoPor,
       canceladoEn: args.canceladoEn,

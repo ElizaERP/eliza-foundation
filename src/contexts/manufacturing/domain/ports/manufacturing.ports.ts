@@ -40,6 +40,10 @@ export interface OrdenProduccionFilter {
   prioridad?: string;
   fechaProgramadaDesde?: Date;
   fechaProgramadaHasta?: Date;
+  /** Órdenes de una jornada (por su código). */
+  jornada?: string;
+  /** Solo órdenes que pertenecen a alguna jornada. */
+  soloJornadas?: boolean;
   limit: number;
   offset: number;
 }

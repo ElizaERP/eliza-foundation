@@ -83,6 +83,7 @@ export interface OrdenProduccionView {
   consumos: ConsumoMpView[];
   lotesProducidos: LoteProducidoView[];
   notas: string | null;
+  jornada: string | null;
   canceladoMotivo: string | null;
   canceladoPor: string | null;
   canceladoEn: string | null;
@@ -112,6 +113,7 @@ export function toOrdenProduccionView(o: OrdenDeProduccion): OrdenProduccionView
     consumos: o.consumos.map(toConsumoMpView),
     lotesProducidos: o.lotesProducidos.map(toLoteProducidoView),
     notas: o.notas,
+    jornada: o.jornada,
     canceladoMotivo: o.canceladoMotivo,
     canceladoPor: o.canceladoPor,
     canceladoEn: o.canceladoEn?.toISOString() ?? null,
@@ -139,6 +141,7 @@ export interface OrdenProduccionListView {
   materialesReservados: boolean;
   consumosCount: number;
   lotesProducidosCount: number;
+  jornada: string | null;
   fechaProgramada: string | null;
   createdAt: string;
 }
@@ -156,6 +159,7 @@ export function toOrdenProduccionListView(o: OrdenDeProduccion): OrdenProduccion
     materialesReservados: o.materialesReservados,
     consumosCount: o.consumos.length,
     lotesProducidosCount: o.lotesProducidos.length,
+    jornada: o.jornada,
     fechaProgramada: o.fechaProgramada?.toISOString() ?? null,
     createdAt: o.createdAt.toISOString(),
   };

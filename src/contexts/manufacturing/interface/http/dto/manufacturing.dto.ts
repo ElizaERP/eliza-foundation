@@ -1,6 +1,9 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import {
+  ArrayMaxSize,
+  ArrayMinSize,
+  IsArray,
   IsDate,
   IsEnum,
   IsInt,
@@ -12,6 +15,7 @@ import {
   Matches,
   Max,
   Min,
+  ValidateNested,
 } from 'class-validator';
 
 import {
@@ -138,4 +142,65 @@ export class ListProductionOrdersQueryDto {
   @ApiPropertyOptional({ default: 0 })
   @IsOptional() @Type(() => Number) @IsInt() @Min(0)
   offset?: number = 0;
+}
+
+// =====================================================================
+// CompleteProductionOrder — consumo real (Sprint 15)
+// =====================================================================
+export class ConsumoRealDto {
+  @ApiProperty({ format: 'uuid', description: 'Materia prima de la receta de la orden' })
+  @IsUUID()
+  productId!: string;
+
+  @ApiProperty({ example: 5.8, description: 'Lo que se gastó de verdad (0 = no se usó)' })
+  @IsNumber() @Min(0)
+  cantidad!: number;
+}
+
+export class CompleteProductionOrderDto {
+  @ApiPropertyOptional({
+    type: [ConsumoRealDto],
+    description: 'Consumo real por materia prima. Omitida = receta × cantidad realmente producida.',
+  })
+  @IsOptional() @IsArray() @ArrayMaxSize(100)
+  @ValidateNested({ each: true }) @Type(() => ConsumoRealDto)
+  consumos?: ConsumoRealDto[];
+}
+
+// =====================================================================
+// Jornadas (Sprint 15)
+// =====================================================================
+export class JornadaLineaDto {
+  @ApiProperty({ format: 'uuid' })
+  @IsUUID()
+  productoTerminadoId!: string;
+
+  @ApiProperty({ example: 500 })
+  @IsNumber() @Min(0.000001)
+  cantidadObjetivo!: number;
+}
+
+export class CreateJornadaDto {
+  @ApiProperty({ type: [JornadaLineaDto] })
+  @IsArray() @ArrayMinSize(1) @ArrayMaxSize(20)
+  @ValidateNested({ each: true }) @Type(() => JornadaLineaDto)
+  lineas!: JornadaLineaDto[];
+
+  @ApiPropertyOptional({ enum: PrioridadProduccion })
+  @IsOptional() @IsEnum(PrioridadProduccion)
+  prioridad?: PrioridadProduccion;
+
+  @ApiPropertyOptional({ example: '2026-10-11T11:00:00.000Z' })
+  @IsOptional() @Type(() => Date) @IsDate()
+  fechaProgramada?: Date;
+
+  @ApiPropertyOptional({ example: 'Pedido grande de La quesita' })
+  @IsOptional() @IsString() @Length(0, 1000)
+  notas?: string;
+}
+
+export class ListJornadasQueryDto {
+  @ApiPropertyOptional({ default: 30 })
+  @IsOptional() @Type(() => Number) @IsInt() @Min(1) @Max(100)
+  limit?: number = 30;
 }

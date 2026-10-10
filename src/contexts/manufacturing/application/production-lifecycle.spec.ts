@@ -41,6 +41,7 @@ describe('Órdenes de producción — reserva, consumo al completar y cancelaci�
   }
 
   const repoDe = (o: OrdenDeProduccion) => ({ findById: jest.fn().mockResolvedValue(o), save: jest.fn().mockResolvedValue(undefined) });
+  const reserveNoop = () => ({ execute: jest.fn().mockResolvedValue(ok({ totalAsignado: 0, asignaciones: [], reservaIds: [] })) });
   const releaseNoop = () => ({ execute: jest.fn().mockResolvedValue(err({ code: 'inventory.no_reservations_found', message: '', category: 'not_found' })) });
 
   describe('ReserveMaterials', () => {
@@ -91,7 +92,7 @@ describe('Órdenes de producción — reserva, consumo al completar y cancelaci�
             : { totalDespachado: 3, movimientoIds: ['m3'], detalle: [
                 { movimientoId: 'm3', loteId: 'LQ1', codigoLote: 'QUE-001', cantidad: 3 }] })),
       };
-      const r = await new CompleteProductionOrderUseCase(repo as never, dispatch as never, clock as never).execute({ ordenId: o.id.value });
+      const r = await new CompleteProductionOrderUseCase(repo as never, dispatch as never, reserveNoop() as never, releaseNoop() as never, clock as never).execute({ ordenId: o.id.value });
 
       expect(r.unwrap().estado).toBe(EstadoOrdenProduccion.Completada);
       expect(o.consumos.map((c) => `${c.codigoLote}:${c.cantidad}${c.unidadMedida}`)).toEqual(['HAR-001:4kg', 'HAR-002:2kg', 'QUE-001:3kg']);
@@ -107,7 +108,7 @@ describe('Órdenes de producción — reserva, consumo al completar y cancelaci�
             ? err({ code: 'inventory.no_reservations_to_dispatch', message: '', category: 'not_found' })
             : ok({ totalDespachado: 3, movimientoIds: ['m3'], detalle: [{ movimientoId: 'm3', loteId: 'LQ1', codigoLote: 'QUE-001', cantidad: 3 }] })),
       };
-      const r = await new CompleteProductionOrderUseCase(repoDe(o) as never, dispatch as never, clock as never).execute({ ordenId: o.id.value });
+      const r = await new CompleteProductionOrderUseCase(repoDe(o) as never, dispatch as never, reserveNoop() as never, releaseNoop() as never, clock as never).execute({ ordenId: o.id.value });
       expect(r.isOk).toBe(true);
       expect(o.consumos).toHaveLength(1);
     });
@@ -117,7 +118,7 @@ describe('Órdenes de producción — reserva, consumo al completar y cancelaci�
       o.markMaterialsReserved({ now }).unwrap();
       o.start({ iniciadoPor: 'u-1', now }).unwrap();
       const dispatch = { execute: jest.fn() };
-      const r = await new CompleteProductionOrderUseCase(repoDe(o) as never, dispatch as never, clock as never).execute({ ordenId: o.id.value });
+      const r = await new CompleteProductionOrderUseCase(repoDe(o) as never, dispatch as never, reserveNoop() as never, releaseNoop() as never, clock as never).execute({ ordenId: o.id.value });
       expect(r.unwrapErr().code).toBe('orden.no_lots_produced');
       expect(dispatch.execute).not.toHaveBeenCalled();
     });

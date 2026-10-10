@@ -113,6 +113,7 @@ export class PrismaOrdenProduccionRepository implements OrdenProduccionRepositor
             componentes: orden.componentes as unknown as Prisma.InputJsonValue,
             materialesReservados: orden.materialesReservados,
             notas: orden.notas,
+            jornada: orden.jornada,
             canceladoMotivo: orden.canceladoMotivo,
             canceladoPor: orden.canceladoPor,
             canceladoEn: orden.canceladoEn,
@@ -219,6 +220,8 @@ export class PrismaOrdenProduccionRepository implements OrdenProduccionRepositor
     if (filter.estado) where.estado = filter.estado;
     if (filter.productoTerminadoId) where.productoTerminadoId = filter.productoTerminadoId;
     if (filter.prioridad) where.prioridad = filter.prioridad;
+    if (filter.jornada) where.jornada = filter.jornada;
+    else if (filter.soloJornadas) where.jornada = { not: null };
     if (filter.fechaProgramadaDesde || filter.fechaProgramadaHasta) {
       where.fechaProgramada = {};
       if (filter.fechaProgramadaDesde) where.fechaProgramada.gte = filter.fechaProgramadaDesde;
@@ -289,6 +292,7 @@ export class PrismaOrdenProduccionRepository implements OrdenProduccionRepositor
       consumos,
       lotesProducidos,
       notas: row.notas,
+      jornada: row.jornada ?? null,
       canceladoMotivo: row.canceladoMotivo,
       canceladoPor: row.canceladoPor,
       canceladoEn: row.canceladoEn,
