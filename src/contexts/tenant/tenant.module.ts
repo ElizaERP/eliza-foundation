@@ -1,5 +1,7 @@
 import { Module, Provider } from '@nestjs/common';
 
+import { TENANT_ACCESS_PORT } from '@eliza/shared-kernel/application/ports';
+
 import {
   ActivateTenant,
   ChangePlan,
@@ -13,6 +15,7 @@ import {
   SuspendTenant,
 } from './application';
 import { TENANT_REPOSITORY } from './domain';
+import { PrismaTenantAccess } from './infrastructure/access/prisma-tenant-access';
 import { PrismaTenantRepository } from './infrastructure/persistence/prisma-tenant.repository';
 import { MyTenantController } from './interface/http/my-tenant.controller';
 import { PlatformTenantsController } from './interface/http/platform-tenants.controller';
@@ -36,6 +39,12 @@ const repositoryProviders: Provider[] = [
     provide: TENANT_REPOSITORY,
     useExisting: PrismaTenantRepository,
   },
+  // Estado de acceso del tenant para el JwtAuthGuard (IAM lo consume por el port).
+  PrismaTenantAccess,
+  {
+    provide: TENANT_ACCESS_PORT,
+    useExisting: PrismaTenantAccess,
+  },
 ];
 
 const useCases: Provider[] = [
@@ -54,6 +63,6 @@ const useCases: Provider[] = [
 @Module({
   controllers: [PlatformTenantsController, MyTenantController],
   providers: [...repositoryProviders, ...useCases],
-  exports: [TENANT_REPOSITORY, ...useCases],
+  exports: [TENANT_REPOSITORY, TENANT_ACCESS_PORT, ...useCases],
 })
 export class TenantContextModule {}

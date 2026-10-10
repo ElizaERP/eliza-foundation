@@ -90,3 +90,22 @@ export interface UnitOfWorkPort {
 }
 
 export const UNIT_OF_WORK_PORT = Symbol('UnitOfWorkPort');
+
+// ---------- Tenant Access port ----------
+/**
+ * ¿Puede operar hoy este tenant? Lo consulta el JwtAuthGuard en cada
+ * request autenticado, después de verificar el token. Lo implementa el
+ * Tenant Context (dueño del estado del tenant); IAM solo conoce este
+ * contrato, no el agregado Tenant.
+ *
+ *   - 'active'    → el tenant está Active: el request sigue.
+ *   - 'suspended' → Suspended: 403 `tenant.suspended`.
+ *   - 'inactive'  → PendingActivation, Deleted o inexistente: 403 `tenant.inactive`.
+ */
+export type TenantAccess = 'active' | 'suspended' | 'inactive';
+
+export interface TenantAccessPort {
+  check(tenantId: string): Promise<TenantAccess>;
+}
+
+export const TENANT_ACCESS_PORT = Symbol('TenantAccessPort');

@@ -2,8 +2,10 @@ import {
   CanActivate,
   ExecutionContext,
   ForbiddenException,
+  Inject,
   Injectable,
   Logger,
+  Optional,
   UnauthorizedException,
   createParamDecorator,
 } from '@nestjs/common';
@@ -12,6 +14,11 @@ import { AuthGuard } from '@nestjs/passport';
 import { Request } from 'express';
 import { ClsService } from 'nestjs-cls';
 
+import {
+  TENANT_ACCESS_PORT,
+  TenantAccessPort,
+} from '@eliza/shared-kernel/application/ports';
+import { applicationError } from '@eliza/shared-kernel/application/use-case';
 import {
   CLS_TENANT_ID,
   CLS_USER_ID,
@@ -26,11 +33,15 @@ import { AuthenticatedUser } from './jwt.strategy';
 export { AuthenticatedUser };
 
 /**
- * JwtAuthGuard — extiende AuthGuard('eliza-jwt') con dos extras:
+ * JwtAuthGuard — extiende AuthGuard('eliza-jwt') con tres extras:
  *   1. Respeta @Public() — rutas públicas saltan validación
  *   2. Sobreescribe el CLS context con los valores VERIFICADOS del JWT.
  *      Esto reemplaza los valores no-verificados que puso el
  *      TenantContextMiddleware en Sprint 0/1.
+ *   3. Rechaza con 403 a los usuarios de un tenant que no está Active
+ *      (suspendido, pendiente o eliminado). El token puede seguir siendo
+ *      válido en Keycloak, pero el tenant ya no puede operar. Los usuarios
+ *      de plataforma (sin tenant_id) no pasan por este chequeo.
  */
 @Injectable()
 export class JwtAuthGuard extends AuthGuard('eliza-jwt') {
@@ -39,6 +50,7 @@ export class JwtAuthGuard extends AuthGuard('eliza-jwt') {
   constructor(
     private readonly reflector: Reflector,
     private readonly cls: ClsService,
+    @Optional() @Inject(TENANT_ACCESS_PORT) private readonly tenantAccess?: TenantAccessPort,
   ) {
     super();
   }
@@ -60,9 +72,29 @@ export class JwtAuthGuard extends AuthGuard('eliza-jwt') {
       this.cls.set(CLS_USER_ROLES, req.user.roles);
       if (req.user.tenantId) {
         this.cls.set(CLS_TENANT_ID, req.user.tenantId);
+        await this.exigirTenantActivo(req.user.tenantId);
       }
     }
     return true;
+  }
+
+  /** Lanza un ApplicationError (403 Problem Details) si el tenant no puede operar. */
+  private async exigirTenantActivo(tenantId: string): Promise<void> {
+    if (!this.tenantAccess) return;
+    const access = await this.tenantAccess.check(tenantId);
+    if (access === 'active') return;
+    this.logger.warn(`Request rechazado: tenant ${tenantId} ${access}`);
+    throw access === 'suspended'
+      ? applicationError(
+          'tenant.suspended',
+          'Tu empresa está suspendida en ELIZA. Comunícate con el administrador.',
+          'tenant_inactive',
+        )
+      : applicationError(
+          'tenant.inactive',
+          'Tu empresa no está activa en ELIZA. Comunícate con el administrador.',
+          'tenant_inactive',
+        );
   }
 
   override handleRequest<T = AuthenticatedUser>(
