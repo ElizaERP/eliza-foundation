@@ -1,6 +1,7 @@
 import { AggregateRoot } from '../domain/aggregate-root';
 import { DomainEvent } from '../domain/domain-event';
 import { Identifier } from '../domain/identifier';
+import { Result, err } from '../domain/result';
 
 /**
  * =====================================================================
@@ -90,6 +91,32 @@ export interface UnitOfWorkPort {
 }
 
 export const UNIT_OF_WORK_PORT = Symbol('UnitOfWorkPort');
+
+/** Lo lanza `atomically` para revertir la transacción cuando el trabajo devuelve err. */
+class RollbackWithResult<E> {
+  constructor(readonly error: E) {}
+}
+
+/**
+ * Ejecuta trabajo que devuelve Result dentro de una unidad de trabajo:
+ * si devuelve err, la transacción se REVIERTE (nada de lo escrito queda) y
+ * se devuelve ese mismo err. Si lanza, también se revierte y la excepción sigue.
+ */
+export async function atomically<T, E>(
+  uow: UnitOfWorkPort,
+  work: () => Promise<Result<T, E>>,
+): Promise<Result<T, E>> {
+  try {
+    return await uow.execute(async () => {
+      const r = await work();
+      if (r.isErr) throw new RollbackWithResult(r.error);
+      return r;
+    });
+  } catch (e) {
+    if (e instanceof RollbackWithResult) return err<T, E>(e.error as E);
+    throw e;
+  }
+}
 
 // ---------- Tenant Access port ----------
 /**
