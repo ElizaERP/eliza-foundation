@@ -5,6 +5,9 @@ import {
   ClockPort,
   TENANT_CONTEXT_PORT,
   TenantContextPort,
+  UNIT_OF_WORK_PORT,
+  UnitOfWorkPort,
+  atomically,
 } from '@eliza/shared-kernel/application/ports';
 import {
   ApplicationError,
@@ -361,6 +364,12 @@ export class RecordConsumptionUseCase
 
 // =====================================================================
 // 5. RecordProduction — crea Lote PT en Inventory
+//
+// Atómico (Fase 0): crear el lote, recibir el stock y registrar la
+// producción en la orden ocurren en UNA transacción. Antes eran tres: si
+// fallaba la recepción quedaba un lote huérfano (y el reintento chocaba
+// con el código de lote), y si fallaba guardar la orden quedaba stock que
+// la orden no contaba (y el reintento lo duplicaba).
 // =====================================================================
 
 export interface RecordProductionInput {
@@ -383,9 +392,19 @@ export class RecordProductionUseCase
     private readonly registerLot: RegisterLotUseCase,
     private readonly receiveInventory: ReceiveInventoryUseCase,
     @Inject(CLOCK_PORT) private readonly clock: ClockPort,
+    @Inject(UNIT_OF_WORK_PORT) private readonly uow: UnitOfWorkPort,
   ) {}
 
   async execute(input: RecordProductionInput): Promise<Result<OrdenProduccionView, ApplicationError>> {
+    const r = await atomically(this.uow, () => this.registrar(input));
+    if (r.isOk) {
+      this.logger.log(`Produced ${input.cantidad} units for order ${r.value.codigo}`);
+    }
+    return r;
+  }
+
+  /** Cualquier err aquí revierte el lote, la recepción y la orden. */
+  private async registrar(input: RecordProductionInput): Promise<Result<OrdenProduccionView, ApplicationError>> {
     const now = this.clock.now();
 
     const orden = await this.repo.findById(OrdenProduccionId.fromString(input.ordenId));
@@ -445,7 +464,6 @@ export class RecordProductionUseCase
     }
 
     await this.repo.save(orden);
-    this.logger.log(`Produced ${input.cantidad} units of ${orden.productoTerminadoCode} for order ${orden.codigo}`);
     return ok(toOrdenProduccionView(orden));
   }
 }

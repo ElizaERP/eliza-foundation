@@ -2,6 +2,8 @@ import { Module, Provider } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
 import { PassportModule } from '@nestjs/passport';
 
+import { TenantContextModule } from '@eliza/contexts/tenant/tenant.module';
+
 import {
   ActivateUser,
   AssignRole,
@@ -84,6 +86,8 @@ const globalGuards: Provider[] = [
 @Module({
   imports: [
     PassportModule.register({ defaultStrategy: 'eliza-jwt' }),
+    // Solo para TENANT_ACCESS_PORT: el JwtAuthGuard rechaza tenants suspendidos.
+    TenantContextModule,
   ],
   controllers: [
     AuthController,
